@@ -31,3 +31,4 @@ docs/
 # App specific
 validation_output/
 easyocr_models/
+results/
