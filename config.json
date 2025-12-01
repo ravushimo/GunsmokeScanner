@@ -17,7 +17,7 @@
   },
   "validation": {
     "min_nickname_length": 2,
-    "min_total_score": 1000,
+    "min_total_score": 0,
     "max_duplicate_check": 20
   },
   "rows": [
