@@ -446,7 +446,7 @@ class GFL2Scanner:
                 overlay = tk.Toplevel(self.root)
                 overlay.geometry(f"{w}x{h}+{x}+{y}")
                 overlay.overrideredirect(True)
-                overlay.attributes('-alpha', 0.5)  # Increased from 0.3 to 0.5
+                overlay.attributes('-alpha', 0.2)  # Increased from 0.3 to 0.5
                 overlay.attributes('-topmost', True)
                 
                 # Colored background
