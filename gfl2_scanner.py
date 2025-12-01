@@ -71,7 +71,7 @@ class GFL2Scanner:
         # Setup main window
         self.root = tk.Tk()
         self.root.title("GFL2 Leaderboard Scanner - gunsmoke.app")
-        self.root.geometry("1200x800")
+        self.root.geometry("1200x600")
         self.root.configure(bg=THEME['bg_dark'])
         
         # Apply theme to ttk styles
@@ -136,11 +136,26 @@ class GFL2Scanner:
                 font=("Segoe UI", 18, "bold"), bg=THEME['bg_medium'], 
                 fg=THEME['text_primary']).pack(side=tk.LEFT)
         
-        # Season indicator
-        self.season_label = tk.Label(header, text="Season: Not Set",
+        # Season indicator and controls
+        right_controls = tk.Frame(header, bg=THEME['bg_medium'])
+        right_controls.pack(side=tk.RIGHT, padx=20)
+        
+        # Always on top checkbox
+        self.always_on_top_var = tk.BooleanVar(value=False)
+        on_top_cb = tk.Checkbutton(right_controls, text="Always on Top",
+                                   variable=self.always_on_top_var,
+                                   command=self.toggle_always_on_top,
+                                   bg=THEME['bg_medium'], fg=THEME['text_secondary'],
+                                   selectcolor=THEME['bg_dark'],
+                                   activebackground=THEME['bg_medium'],
+                                   activeforeground=THEME['accent_cyan'],
+                                   font=("Segoe UI", 9))
+        on_top_cb.pack(side=tk.TOP, anchor=tk.E, pady=(0, 5))
+        
+        self.season_label = tk.Label(right_controls, text="Season: Not Set",
                                      font=("Segoe UI", 12, "bold"), bg=THEME['bg_medium'],
                                      fg=THEME['warning'])
-        self.season_label.pack(side=tk.RIGHT, padx=20)
+        self.season_label.pack(side=tk.TOP, anchor=tk.E)
         
         # Tabbed interface
         notebook = ttk.Notebook(self.root, style='Custom.TNotebook')
@@ -210,17 +225,39 @@ class GFL2Scanner:
                               command=self.on_selection_change)
             rb.pack(anchor=tk.W, pady=2)
         
-        # Region info
+        # Region info with editable fields
         info_frame = tk.Frame(parent, bg=THEME['bg_medium'])
         info_frame.pack(fill=tk.X, padx=20, pady=10)
         
-        tk.Label(info_frame, text="Current Region:", font=("Segoe UI", 11, "bold"),
+        tk.Label(info_frame, text="Current Region (editable):", font=("Segoe UI", 11, "bold"),
                 bg=THEME['bg_medium'], fg=THEME['text_primary']).pack(pady=(10, 5))
         
-        self.region_info = tk.Label(info_frame, text="X: 0  Y: 0  W: 0  H: 0",
-                                   font=("Consolas", 11), bg=THEME['bg_medium'],
-                                   fg=THEME['accent_cyan'])
-        self.region_info.pack(pady=(0, 10))
+        # Create entry fields for X, Y, W, H
+        fields_frame = tk.Frame(info_frame, bg=THEME['bg_medium'])
+        fields_frame.pack(pady=(5, 10))
+        
+        self.region_entries = {}
+        labels = [("X:", "x"), ("Y:", "y"), ("Width:", "w"), ("Height:", "h")]
+        
+        for i, (label_text, field_name) in enumerate(labels):
+            field_container = tk.Frame(fields_frame, bg=THEME['bg_medium'])
+            field_container.pack(side=tk.LEFT, padx=10)
+            
+            tk.Label(field_container, text=label_text, bg=THEME['bg_medium'],
+                    fg=THEME['text_secondary'], font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 5))
+            
+            entry = tk.Entry(field_container, width=8, bg=THEME['bg_light'],
+                           fg=THEME['text_primary'], font=("Consolas", 10),
+                           insertbackground=THEME['accent_cyan'])
+            entry.pack(side=tk.LEFT)
+            entry.bind('<Return>', self.apply_manual_values)
+            entry.bind('<FocusOut>', self.apply_manual_values)
+            
+            self.region_entries[field_name] = entry
+        
+        # Apply button
+        apply_btn = self.create_button(fields_frame, "Apply", self.apply_manual_values, THEME['accent_cyan'])
+        apply_btn.pack(side=tk.LEFT, padx=10)
         
         # Action buttons
         btn_frame = tk.Frame(parent, bg=THEME['bg_dark'])
@@ -325,11 +362,37 @@ class GFL2Scanner:
         self.config["rows"][row][col] = bbox
         self.update_region_info()
     
+    def toggle_always_on_top(self):
+        """Toggle window always on top"""
+        self.root.attributes('-topmost', self.always_on_top_var.get())
+    
+    def apply_manual_values(self, event=None):
+        """Apply manually entered values to current region"""
+        try:
+            x = int(self.region_entries['x'].get())
+            y = int(self.region_entries['y'].get())
+            w = int(self.region_entries['w'].get())
+            h = int(self.region_entries['h'].get())
+            
+            self.set_current_bbox([x, y, w, h])
+            
+            # Refresh overlay if visible
+            if hasattr(self, 'overlay_windows') and self.overlay_windows:
+                self.show_overlay()
+        except ValueError:
+            pass  # Ignore invalid input
+    
     def update_region_info(self):
-        """Update region info display"""
+        """Update region info display and entry fields"""
         bbox = self.get_current_bbox()
-        text = f"X: {bbox[0]}  Y: {bbox[1]}  W: {bbox[2]}  H: {bbox[3]}"
-        self.region_info.config(text=text)
+        self.region_entries['x'].delete(0, tk.END)
+        self.region_entries['x'].insert(0, str(bbox[0]))
+        self.region_entries['y'].delete(0, tk.END)
+        self.region_entries['y'].insert(0, str(bbox[1]))
+        self.region_entries['w'].delete(0, tk.END)
+        self.region_entries['w'].insert(0, str(bbox[2]))
+        self.region_entries['h'].delete(0, tk.END)
+        self.region_entries['h'].insert(0, str(bbox[3]))
     
     def on_selection_change(self):
         """Handle row/column selection change"""
@@ -360,37 +423,45 @@ class GFL2Scanner:
                 bbox = self.config["rows"][row_idx][col_name]
                 x, y, w, h = bbox
                 
-                # Create overlay window
+                # Create text label window (above the overlay)
+                label_height = 20
+                label_win = tk.Toplevel(self.root)
+                label_win.geometry(f"{w}x{label_height}+{x}+{y-label_height-2}")
+                label_win.overrideredirect(True)
+                label_win.attributes('-alpha', 0.9)
+                label_win.attributes('-topmost', True)
+                
+                color = colors[col_name]
+                col_short = {"nickname": "Nick", "single_high": "Single", "total_score": "Total"}
+                label_text = f"R{row_idx+1} {col_short[col_name]}"
+                
+                label_frame = tk.Frame(label_win, bg=color)
+                label_frame.pack(fill=tk.BOTH, expand=True)
+                
+                tk.Label(label_frame, text=label_text,
+                        bg=color, fg=THEME['bg_dark'],
+                        font=("Segoe UI", 8, "bold")).pack()
+                
+                # Create overlay window (now without text inside)
                 overlay = tk.Toplevel(self.root)
                 overlay.geometry(f"{w}x{h}+{x}+{y}")
                 overlay.overrideredirect(True)
-                overlay.attributes('-alpha', 0.3)
+                overlay.attributes('-alpha', 0.5)  # Increased from 0.3 to 0.5
                 overlay.attributes('-topmost', True)
                 
-                # Colored background based on column
-                color = colors[col_name]
+                # Colored background
                 frame = tk.Frame(overlay, bg=color, width=w, height=h, cursor="fleur")
                 frame.pack(fill=tk.BOTH, expand=True)
-                
-                # Label with abbreviated text
-                col_short = {"nickname": "Nick", "single_high": "Single", "total_score": "Total"}
-                label_text = f"R{row_idx+1}\n{col_short[col_name]}"
-                label = tk.Label(frame, text=label_text,
-                                bg=color, fg=THEME['bg_dark'],
-                                font=("Segoe UI", 9, "bold"))
-                label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
                 
                 # Store references for dragging
                 overlay.row_idx = row_idx
                 overlay.col_name = col_name
+                overlay.label_win = label_win  # Keep reference to label
                 
                 # Bind mouse drag
                 frame.bind('<Button-1>', lambda e, o=overlay: self.start_drag_multi(e, o))
                 frame.bind('<B1-Motion>', lambda e, o=overlay: self.do_drag_multi(e, o))
                 frame.bind('<ButtonRelease-1>', self.end_drag)
-                label.bind('<Button-1>', lambda e, o=overlay: self.start_drag_multi(e, o))
-                label.bind('<B1-Motion>', lambda e, o=overlay: self.do_drag_multi(e, o))
-                label.bind('<ButtonRelease-1>', self.end_drag)
                 
                 self.overlay_windows.append(overlay)
     
@@ -421,6 +492,10 @@ class GFL2Scanner:
         
         # Move overlay window
         overlay.geometry(f"+{new_x}+{new_y}")
+        
+        # Move label window too
+        if hasattr(overlay, 'label_win') and overlay.label_win:
+            overlay.label_win.geometry(f"+{new_x}+{new_y-22}")
         
         # Update info if this is the currently selected field
         if row_idx == self.row_var.get() and col_name == self.col_var.get():
@@ -714,8 +789,20 @@ class GFL2Scanner:
     def on_closing(self):
         """Handle window closing"""
         keyboard.unhook_all()
-        if self.overlay_window:
-            self.overlay_window.destroy()
+        if hasattr(self, 'overlay_windows'):
+            for overlay in self.overlay_windows:
+                if overlay:
+                    # Destroy label window if it exists
+                    if hasattr(overlay, 'label_win') and overlay.label_win:
+                        try:
+                            overlay.label_win.destroy()
+                        except:
+                            pass
+                    # Destroy overlay
+                    try:
+                        overlay.destroy()
+                    except:
+                        pass
         self.root.destroy()
 
 if __name__ == "__main__":
