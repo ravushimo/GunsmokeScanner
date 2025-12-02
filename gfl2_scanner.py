@@ -233,12 +233,14 @@ class GFL2Scanner:
         style.configure('Custom.TNotebook.Tab',
                        background=THEME['bg_medium'],
                        foreground=THEME['text_secondary'],
-                       padding=[15, 8],
+                       padding=[12, 6],
                        borderwidth=0,
+                       relief='flat',
                        font=('Segoe UI', 11, 'bold'))
         style.map('Custom.TNotebook.Tab',
                  background=[('selected', THEME['bg_light'])],
-                 foreground=[('selected', THEME['accent_cyan'])])
+                 foreground=[('selected', THEME['accent_cyan'])],
+                 padding=[('selected', [12, 6])])
         
     def setup_ui(self):
         """Setup main UI with tabs"""
@@ -332,17 +334,17 @@ class GFL2Scanner:
                 font=("Segoe UI", 10), bg=THEME['bg_light'],
                 fg=THEME['text_secondary'], justify=tk.LEFT).pack(anchor=tk.W, padx=15, pady=(0, 15))
         
-        # Selection controls - centered
+        # Selection controls - centered (compact)
         ctrl_frame = tk.Frame(parent, bg=THEME['bg_light'])
-        ctrl_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        ctrl_frame.pack(fill=tk.X, padx=20, pady=(10, 5))
         
         # Container for centering
         center_container = tk.Frame(ctrl_frame, bg=THEME['bg_light'])
-        center_container.pack(expand=True)
+        center_container.pack()
         
         # Row selection
         row_frame = tk.Frame(center_container, bg=THEME['bg_light'])
-        row_frame.pack(side=tk.LEFT, padx=40, pady=15)
+        row_frame.pack(side=tk.LEFT, padx=40, pady=10)
         
         tk.Label(row_frame, text="Select Row:", font=("Segoe UI", 11, "bold"),
                 bg=THEME['bg_light'], fg=THEME['text_primary']).pack(anchor=tk.W, pady=5)
@@ -359,7 +361,7 @@ class GFL2Scanner:
         
         # Column selection
         col_frame = tk.Frame(center_container, bg=THEME['bg_light'])
-        col_frame.pack(side=tk.LEFT, padx=40, pady=15)
+        col_frame.pack(side=tk.LEFT, padx=40, pady=10)
         
         tk.Label(col_frame, text="Select Column:", font=("Segoe UI", 11, "bold"),
                 bg=THEME['bg_light'], fg=THEME['text_primary']).pack(anchor=tk.W, pady=5)
@@ -375,29 +377,36 @@ class GFL2Scanner:
                               command=self.on_selection_change)
             rb.pack(anchor=tk.W, pady=2)
         
-        # Region info with editable fields
+        # Region info with editable fields (expanded)
         info_frame = tk.Frame(parent, bg=THEME['bg_medium'])
-        info_frame.pack(fill=tk.X, padx=20, pady=10)
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(5, 15))
         
         tk.Label(info_frame, text="Current Region (editable):", font=("Segoe UI", 11, "bold"),
-                bg=THEME['bg_medium'], fg=THEME['text_primary']).pack(pady=(10, 5))
+                bg=THEME['bg_medium'], fg=THEME['text_primary']).pack(pady=(15, 10))
         
-        # Create entry fields for X, Y, W, H
+        # Create entry fields for X, Y, W, H in 2x2 grid
         fields_frame = tk.Frame(info_frame, bg=THEME['bg_medium'])
-        fields_frame.pack(pady=(5, 10))
+        fields_frame.pack(pady=(10, 10))
         
         self.region_entries = {}
-        labels = [("X:", "x"), ("Y:", "y"), ("Width:", "w"), ("Height:", "h")]
+        # Layout: [X, Y] on top row, [Width, Height] on bottom row
+        labels = [
+            ("X:", "x", 0, 0),
+            ("Y:", "y", 0, 1),
+            ("Width:", "w", 1, 0),
+            ("Height:", "h", 1, 1)
+        ]
         
-        for i, (label_text, field_name) in enumerate(labels):
+        for label_text, field_name, row, col in labels:
             field_container = tk.Frame(fields_frame, bg=THEME['bg_medium'])
-            field_container.pack(side=tk.LEFT, padx=10)
+            field_container.grid(row=row, column=col, padx=15, pady=8)
             
             tk.Label(field_container, text=label_text, bg=THEME['bg_medium'],
-                    fg=THEME['text_secondary'], font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 5))
+                    fg=THEME['text_secondary'], font=("Segoe UI", 10, "bold"),
+                    width=7, anchor=tk.E).pack(side=tk.LEFT, padx=(0, 8))
             
-            entry = tk.Entry(field_container, width=8, bg=THEME['bg_light'],
-                           fg=THEME['text_primary'], font=("Consolas", 10),
+            entry = tk.Entry(field_container, width=12, bg=THEME['bg_light'],
+                           fg=THEME['text_primary'], font=("Consolas", 11),
                            insertbackground=THEME['accent_cyan'])
             entry.pack(side=tk.LEFT)
             entry.bind('<Return>', self.apply_manual_values)
@@ -405,9 +414,9 @@ class GFL2Scanner:
             
             self.region_entries[field_name] = entry
         
-        # Apply button
-        apply_btn = self.create_button(fields_frame, "Apply", self.apply_manual_values, THEME['accent_cyan'])
-        apply_btn.pack(side=tk.LEFT, padx=10)
+        # Apply button - larger and centered
+        apply_btn = self.create_button(info_frame, "Apply Changes", self.apply_manual_values, THEME['accent_cyan'])
+        apply_btn.pack(pady=(5, 15))
         
         # Action buttons
         btn_frame = tk.Frame(parent, bg=THEME['bg_dark'])
