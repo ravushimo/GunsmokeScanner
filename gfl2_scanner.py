@@ -13,11 +13,10 @@ import easyocr
 import pandas as pd
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import keyboard
 import warnings
 
-# Suppress harmless PyTorch warning about pin_memory on CPU
 warnings.filterwarnings('ignore', message='.*pin_memory.*')
 
 # gunsmoke.app Theme Colors
@@ -38,12 +37,19 @@ THEME = {
 
 class GFL2Scanner:
     def __init__(self):
+        # Create default config if it doesn't exist
+        if not os.path.exists("config.json"):
+            self.create_default_config()
+            first_run = True
+        else:
+            first_run = False
+        
         # Load config
         try:
             with open("config.json", "r") as f:
                 self.config = json.load(f)
-        except:
-            messagebox.showerror("Error", "config.json not found!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load config.json: {e}")
             exit()
         
         # Initialize EasyOCR
@@ -56,7 +62,15 @@ class GFL2Scanner:
         self.captured_data = []
         self.screen_w, self.screen_h = pyautogui.size()
         self.capture_count = 0
-        self.season = None
+        
+        # Auto-calculate season
+        season_num, status = self.calculate_season()
+        if status == "Active":
+            self.season = season_num
+            self.season_auto = True  # Track if auto-calculated
+        else:
+            self.season = None  # Off-season
+            self.season_auto = False
         
         # Region selector state
         self.overlay_window = None
@@ -64,6 +78,11 @@ class GFL2Scanner:
         self.current_col = "nickname"
         self.dragging = False
         self.drag_start = None
+        
+        # Inline editing state
+        self.editing_item = None
+        self.editing_column = None
+        self.edit_entry = None
         
         # Create results directory
         os.makedirs("./results", exist_ok=True)
@@ -82,6 +101,108 @@ class GFL2Scanner:
         
         # Register hotkey
         keyboard.add_hotkey('f9', self.capture_once)
+        
+        # Show welcome message on first run
+        if first_run:
+            messagebox.showinfo("Welcome!", 
+                "Welcome to GFL2 Scanner!\n\n" +
+                "This is your first run. Please go to the 'Setup Regions' tab " +
+                "to configure capture regions for your screen resolution.\n\n" +
+                "Click 'Show Overlay' to see and adjust the regions.")
+        
+    def create_default_config(self):
+        """Create default config.json with placeholder values"""
+        # Use screen center for default regions
+        screen_w, screen_h = pyautogui.size()
+        center_x = screen_w // 2
+        center_y = screen_h // 2
+        
+        # Create placeholder regions (user will adjust these)
+        default_config = {
+            "screen_resolution": [screen_w, screen_h],
+            "ocr_languages": ["ch_sim", "en"],
+            "preprocessing": {
+                "threshold": 140,
+                "adaptive": True,
+                "kernel_size": [2, 2]
+            },
+            "validation": {
+                "min_nickname_length": 2,
+                "min_total_score": 0,
+                "max_duplicate_check": 20
+            },
+            "rows": []
+        }
+        
+        # Create 5 rows with placeholder positions
+        for i in range(5):
+            row_y = center_y + (i * 60) - 120  # Spread rows vertically
+            default_config["rows"].append({
+                "nickname": [center_x - 400, row_y, 300, 50],
+                "single_high": [center_x - 50, row_y, 200, 50],
+                "total_score": [center_x + 200, row_y, 200, 50]
+            })
+        
+        # Add metadata
+        default_config["metadata"] = {
+            "generated_by": "gfl2_scanner_default",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "resolution": f"{screen_w}x{screen_h}",
+            "note": "Default configuration - please adjust regions in Setup tab"
+        }
+        
+        # Save to file
+        with open("config.json", "w") as f:
+            json.dump(default_config, f, indent=2)
+        
+        self.config = default_config
+        
+    def calculate_season(self):
+        """Calculate current season based on date
+        Season 17: Nov 30 - Dec 6, 2025 (Sunday to Saturday)
+        Pattern: 7 days active + 14 days break = 21 day cycle
+        """
+        # Reference point
+        reference_date = datetime(2025, 11, 30)  # Season 17 start
+        reference_season = 17
+        
+        today = datetime.now()
+        days_since_ref = (today.date() - reference_date.date()).days
+        
+        # Handle dates before reference
+        if days_since_ref < 0:
+            # Go backwards
+            days_before = abs(days_since_ref)
+            cycles_before = (days_before + 20) // 21  # Round up
+            season_num = reference_season - cycles_before
+            # Calculate where we are in that earlier cycle
+            cycle_start = reference_date - timedelta(days=cycles_before * 21)
+            days_in_cycle = (today.date() - cycle_start.date()).days % 21
+        else:
+            # Current or future dates
+            cycle_num = days_since_ref // 21
+            days_in_cycle = days_since_ref % 21
+            season_num = reference_season + cycle_num
+        
+        # Determine if in active season or break
+        if days_in_cycle < 7:
+            return season_num, "Active"
+        else:
+            return season_num, "Break"
+    
+    def get_season_dates(self, season_num):
+        """Get start and end dates for a given season"""
+        # Calculate offset from reference season
+        reference_date = datetime(2025, 11, 30)
+        reference_season = 17
+        
+        season_offset = season_num - reference_season
+        days_offset = season_offset * 21  # Each cycle is 21 days
+        
+        start_date = reference_date + timedelta(days=days_offset)
+        end_date = start_date + timedelta(days=6)  # 7 days inclusive
+        
+        return start_date, end_date
         
     def setup_styles(self):
         """Setup ttk styles matching gunsmoke.app theme"""
@@ -141,7 +262,7 @@ class GFL2Scanner:
         right_controls.pack(side=tk.RIGHT, padx=20)
         
         # Always on top checkbox
-        self.always_on_top_var = tk.BooleanVar(value=False)
+        self.always_on_top_var = tk.BooleanVar(value=True)
         on_top_cb = tk.Checkbutton(right_controls, text="Always on Top",
                                    variable=self.always_on_top_var,
                                    command=self.toggle_always_on_top,
@@ -152,9 +273,18 @@ class GFL2Scanner:
                                    font=("Segoe UI", 9))
         on_top_cb.pack(side=tk.TOP, anchor=tk.E, pady=(0, 5))
         
-        self.season_label = tk.Label(right_controls, text="Season: Not Set",
-                                     font=("Segoe UI", 12, "bold"), bg=THEME['bg_medium'],
-                                     fg=THEME['warning'])
+        # Season label with auto-calculated value
+        if self.season:
+            start_date, end_date = self.get_season_dates(self.season)
+            season_text = f"Season {self.season} ({start_date.strftime('%b %d')} - {end_date.strftime('%b %d')})"
+            season_color = THEME['accent_cyan']
+        else:
+            season_text = "Off-Season Break"
+            season_color = THEME['warning']
+        
+        self.season_label = tk.Label(right_controls, text=season_text,
+                                     font=("Segoe UI", 11, "bold"), bg=THEME['bg_medium'],
+                                     fg=season_color)
         self.season_label.pack(side=tk.TOP, anchor=tk.E)
         
         # Tabbed interface
@@ -324,7 +454,8 @@ class GFL2Scanner:
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        self.tree.bind('<Double-1>', self.edit_row)
+        # Bind double-click for inline editing
+        self.tree.bind('<Double-1>', self.on_cell_double_click)
         
         # Status bar
         status_frame = tk.Frame(parent, bg=THEME['bg_medium'], height=35)
@@ -517,10 +648,17 @@ class GFL2Scanner:
     def hide_overlay(self):
         """Hide all overlays"""
         if hasattr(self, 'overlay_windows'):
-            for win in self.overlay_windows:
-                if win:
+            for overlay in self.overlay_windows:
+                if overlay:
+                    # Destroy label window if it exists
+                    if hasattr(overlay, 'label_win') and overlay.label_win:
+                        try:
+                            overlay.label_win.destroy()
+                        except:
+                            pass
+                    # Destroy overlay
                     try:
-                        win.destroy()
+                        overlay.destroy()
                     except:
                         pass
             self.overlay_windows = []
@@ -535,16 +673,21 @@ class GFL2Scanner:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save: {e}")
     
-    # Capture methods (same as before but with theme updates)
+    # Capture methods
     def set_season(self):
-        """Set season number"""
-        season = simpledialog.askinteger("Set Season", "Enter season number:",
+        """Override season number"""
+        current_msg = f"Current: Season {self.season}" if self.season else "Current: Off-Season"
+        season = simpledialog.askinteger("Override Season", 
+                                        f"{current_msg}\n\nEnter season number to override:",
                                         initialvalue=self.season if self.season else 1,
                                         minvalue=1, maxvalue=999)
         if season:
             self.season = season
-            self.season_label.config(text=f"Season: {season}", fg=THEME['accent_cyan'])
-            self.status_label.config(text=f"Season {season} set. Ready to capture.")
+            self.season_auto = False  # Mark as manually overridden
+            start_date, end_date = self.get_season_dates(season)
+            season_text = f"Season {season} ({start_date.strftime('%b %d')} - {end_date.strftime('%b %d')}) [Manual]"
+            self.season_label.config(text=season_text, fg=THEME['accent_cyan'])
+            self.status_label.config(text=f"Season manually set to {season}.")
     
     def safe_grab(self, bbox):
         """Safely capture screen region"""
@@ -691,66 +834,120 @@ class GFL2Scanner:
                 f"{player['totalscore']:,}"
             ))
     
-    def edit_row(self, event):
-        """Edit selected row"""
-        selection = self.tree.selection()
-        if not selection:
+    def on_cell_double_click(self, event):
+        """Handle double-click on cell to start inline editing"""
+        # Get clicked item and column
+        region = self.tree.identify_region(event.x, event.y)
+        if region != "cell":
             return
         
-        item = selection[0]
-        idx = self.tree.index(item)
-        player = self.captured_data[idx]
+        item = self.tree.identify_row(event.y)
+        column = self.tree.identify_column(event.x)
         
-        # Create edit dialog with theme
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Edit Player Data")
-        dialog.geometry("450x300")
-        dialog.configure(bg=THEME['bg_dark'])
-        dialog.transient(self.root)
-        dialog.grab_set()
+        if not item or not column:
+            return
         
-        tk.Label(dialog, text="Edit Player Data", font=("Segoe UI", 16, "bold"),
-                bg=THEME['bg_dark'], fg=THEME['text_primary']).pack(pady=15)
+        # Get column index (columns are #1, #2, etc.)
+        col_idx = int(column.replace('#', '')) - 1
+        col_names = ["season", "ign", "topscore", "totalscore"]
+        col_name = col_names[col_idx]
         
-        form_frame = tk.Frame(dialog, bg=THEME['bg_dark'])
-        form_frame.pack(pady=10, padx=30, fill=tk.BOTH, expand=True)
+        self.start_inline_edit(item, col_idx, col_name)
+    
+    def start_inline_edit(self, item, col_idx, col_name):
+        """Start inline editing of a cell"""
+        # Close any existing editor
+        self.close_editor()
         
-        fields = [
-            ("Season:", str(player["season"])),
-            ("IGN:", player["ign"]),
-            ("Top Score:", str(player["topscore"])),
-            ("Total Score:", str(player["totalscore"]))
-        ]
+        # Get cell bounding box
+        x, y, width, height = self.tree.bbox(item, col_idx)
         
-        entries = []
-        for i, (label, value) in enumerate(fields):
-            tk.Label(form_frame, text=label, bg=THEME['bg_dark'],
-                    fg=THEME['text_secondary'], font=("Segoe UI", 10)).grid(row=i, column=0, sticky=tk.W, pady=8)
-            entry = tk.Entry(form_frame, width=30, bg=THEME['bg_light'],
-                           fg=THEME['text_primary'], font=("Segoe UI", 10),
-                           insertbackground=THEME['accent_cyan'])
-            entry.insert(0, value)
-            entry.grid(row=i, column=1, pady=8, padx=(10, 0))
-            entries.append(entry)
+        # Get current value
+        row_idx = self.tree.index(item)
+        current_value = self.captured_data[row_idx][col_name]
         
-        def save_edit():
-            try:
-                self.captured_data[idx] = {
-                    "season": int(entries[0].get()),
-                    "ign": entries[1].get().strip(),
-                    "topscore": int(entries[2].get().replace(',', '')),
-                    "totalscore": int(entries[3].get().replace(',', ''))
-                }
-                self.refresh_table()
-                dialog.destroy()
-            except ValueError:
-                messagebox.showerror("Invalid Input", "Please enter valid numbers.")
+        # Create entry widget
+        self.edit_entry = tk.Entry(self.tree, bg=THEME['bg_light'], 
+                                   fg=THEME['accent_cyan'],
+                                   font=("Segoe UI", 10),
+                                   insertbackground=THEME['accent_cyan'])
+        self.edit_entry.insert(0, str(current_value))
+        self.edit_entry.select_range(0, tk.END)
+        self.edit_entry.focus()
         
-        btn_frame = tk.Frame(dialog, bg=THEME['bg_dark'])
-        btn_frame.pack(pady=15)
+        # Position the entry
+        self.edit_entry.place(x=x, y=y, width=width, height=height)
         
-        self.create_button(btn_frame, "Save", save_edit, THEME['success']).pack(side=tk.LEFT, padx=5)
-        self.create_button(btn_frame, "Cancel", dialog.destroy, THEME['bg_medium']).pack(side=tk.LEFT, padx=5)
+        # Store editing state
+        self.editing_item = item
+        self.editing_column = col_idx
+        self.editing_col_name = col_name
+        self.editing_row_idx = row_idx
+        
+        # Bind keys
+        self.edit_entry.bind('<Return>', self.save_and_next)
+        self.edit_entry.bind('<Escape>', lambda e: self.close_editor())
+        self.edit_entry.bind('<FocusOut>', self.on_edit_focus_out)
+    
+    def save_and_next(self, event=None):
+        """Save current edit and move to next cell"""
+        self.save_current_edit()
+        
+        # Move to next column
+        col_names = ["season", "ign", "topscore", "totalscore"]
+        next_col_idx = self.editing_column + 1
+        
+        if next_col_idx < len(col_names):
+            # Move to next column in same row
+            self.start_inline_edit(self.editing_item, next_col_idx, col_names[next_col_idx])
+        else:
+            # Move to first column of next row
+            items = self.tree.get_children()
+            current_idx = items.index(self.editing_item)
+            if current_idx + 1 < len(items):
+                next_item = items[current_idx + 1]
+                self.start_inline_edit(next_item, 0, col_names[0])
+            else:
+                # Last cell, just close editor
+                self.close_editor()
+    
+    def save_current_edit(self):
+        """Save the current inline edit"""
+        if not self.edit_entry:
+            return
+        
+        new_value = self.edit_entry.get().strip()
+        col_name = self.editing_col_name
+        
+        try:
+            # Validate and convert based on column type
+            if col_name == "season":
+                new_value = int(new_value)
+            elif col_name in ["topscore", "totalscore"]:
+                new_value = int(new_value.replace(',', ''))
+            # ign stays as string
+            
+            # Update data
+            self.captured_data[self.editing_row_idx][col_name] = new_value
+            
+            # Refresh display
+            self.refresh_table()
+            
+        except ValueError:
+            messagebox.showerror("Invalid Input", f"Please enter a valid value for {col_name}")
+    
+    def on_edit_focus_out(self, event):
+        """Handle focus out from edit entry"""
+        # Small delay to allow button clicks to register
+        self.root.after(100, self.close_editor)
+    
+    def close_editor(self):
+        """Close the inline editor"""
+        if self.edit_entry:
+            self.edit_entry.destroy()
+            self.edit_entry = None
+        self.editing_item = None
+        self.editing_column = None
     
     def clear_all(self):
         """Clear all data"""
