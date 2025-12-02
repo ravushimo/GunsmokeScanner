@@ -32,3 +32,6 @@ docs/
 validation_output/
 easyocr_models/
 results/
+
+build/
+dist/

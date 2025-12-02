@@ -8,7 +8,7 @@ from tkinter import ttk, messagebox, simpledialog
 import pyautogui
 import cv2
 import numpy as np
-from PIL import ImageGrab, Image, ImageTk
+from PIL import ImageGrab
 import easyocr
 import pandas as pd
 import re
@@ -90,7 +90,7 @@ class GFL2Scanner:
         # Setup main window
         self.root = tk.Tk()
         self.root.title("GFL2 Leaderboard Scanner - gunsmoke.app")
-        self.root.geometry("1200x600")
+        self.root.geometry("800x1000")
         self.root.configure(bg=THEME['bg_dark'])
         
         # Apply theme to ttk styles
@@ -273,6 +273,18 @@ class GFL2Scanner:
                                    font=("Segoe UI", 9))
         on_top_cb.pack(side=tk.TOP, anchor=tk.E, pady=(0, 5))
         
+        # Toggle overlay checkbox
+        self.show_overlay_var = tk.BooleanVar(value=False)
+        overlay_cb = tk.Checkbutton(right_controls, text="Show Overlay",
+                                    variable=self.show_overlay_var,
+                                    command=self.toggle_overlay,
+                                    bg=THEME['bg_medium'], fg=THEME['text_secondary'],
+                                    selectcolor=THEME['bg_dark'],
+                                    activebackground=THEME['bg_medium'],
+                                    activeforeground=THEME['accent_cyan'],
+                                    font=("Segoe UI", 9))
+        overlay_cb.pack(side=tk.TOP, anchor=tk.E, pady=(0, 5))
+        
         # Season label with auto-calculated value
         if self.season:
             start_date, end_date = self.get_season_dates(self.season)
@@ -393,10 +405,6 @@ class GFL2Scanner:
         btn_frame = tk.Frame(parent, bg=THEME['bg_dark'])
         btn_frame.pack(pady=20)
         
-        self.create_button(btn_frame, "Show Overlay", self.show_overlay, 
-                          THEME['accent_cyan']).pack(side=tk.LEFT, padx=5)
-        self.create_button(btn_frame, "Hide Overlay", self.hide_overlay,
-                          THEME['bg_medium']).pack(side=tk.LEFT, padx=5)
         self.create_button(btn_frame, "Save Config", self.save_config,
                           THEME['success']).pack(side=tk.LEFT, padx=5)
         
@@ -496,6 +504,13 @@ class GFL2Scanner:
     def toggle_always_on_top(self):
         """Toggle window always on top"""
         self.root.attributes('-topmost', self.always_on_top_var.get())
+    
+    def toggle_overlay(self):
+        """Toggle overlay visibility"""
+        if self.show_overlay_var.get():
+            self.show_overlay()
+        else:
+            self.hide_overlay()
     
     def apply_manual_values(self, event=None):
         """Apply manually entered values to current region"""
@@ -662,6 +677,9 @@ class GFL2Scanner:
                     except:
                         pass
             self.overlay_windows = []
+        
+        # Uncheck the toggle button
+        self.show_overlay_var.set(False)
     
     def save_config(self):
         """Save configuration"""
