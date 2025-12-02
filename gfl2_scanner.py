@@ -548,11 +548,21 @@ class GFL2Scanner:
     
     def show_overlay(self):
         """Show all region overlays at once"""
-        # Clear any existing overlays
+        # Clear any existing overlays - same cleanup as hide_overlay
         if hasattr(self, 'overlay_windows'):
-            for win in self.overlay_windows:
-                if win:
-                    win.destroy()
+            for overlay in self.overlay_windows:
+                if overlay:
+                    # Destroy label window if it exists
+                    if hasattr(overlay, 'label_win') and overlay.label_win:
+                        try:
+                            overlay.label_win.destroy()
+                        except:
+                            pass
+                    # Destroy overlay
+                    try:
+                        overlay.destroy()
+                    except:
+                        pass
         
         self.overlay_windows = []
         
@@ -574,7 +584,7 @@ class GFL2Scanner:
                 label_win = tk.Toplevel(self.root)
                 label_win.geometry(f"{w}x{label_height}+{x}+{y-label_height-2}")
                 label_win.overrideredirect(True)
-                label_win.attributes('-alpha', 0.9)
+                label_win.attributes('-alpha', 0.8)
                 label_win.attributes('-topmost', True)
                 
                 color = colors[col_name]
@@ -592,7 +602,7 @@ class GFL2Scanner:
                 overlay = tk.Toplevel(self.root)
                 overlay.geometry(f"{w}x{h}+{x}+{y}")
                 overlay.overrideredirect(True)
-                overlay.attributes('-alpha', 0.2)  # Increased from 0.3 to 0.5
+                overlay.attributes('-alpha', 0.15)  # Increased from 0.3 to 0.5
                 overlay.attributes('-topmost', True)
                 
                 # Colored background
