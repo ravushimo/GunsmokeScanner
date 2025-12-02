@@ -233,7 +233,7 @@ class GFL2Scanner:
         style.configure('Custom.TNotebook.Tab',
                        background=THEME['bg_medium'],
                        foreground=THEME['text_secondary'],
-                       padding=[20, 10],
+                       padding=[15, 8],
                        borderwidth=0,
                        font=('Segoe UI', 11, 'bold'))
         style.map('Custom.TNotebook.Tab',
@@ -259,33 +259,9 @@ class GFL2Scanner:
         
         # Season indicator and controls
         right_controls = tk.Frame(header, bg=THEME['bg_medium'])
-        right_controls.pack(side=tk.RIGHT, padx=20)
+        right_controls.pack(side=tk.RIGHT, padx=20, pady=10)
         
-        # Always on top checkbox
-        self.always_on_top_var = tk.BooleanVar(value=True)
-        on_top_cb = tk.Checkbutton(right_controls, text="Always on Top",
-                                   variable=self.always_on_top_var,
-                                   command=self.toggle_always_on_top,
-                                   bg=THEME['bg_medium'], fg=THEME['text_secondary'],
-                                   selectcolor=THEME['bg_dark'],
-                                   activebackground=THEME['bg_medium'],
-                                   activeforeground=THEME['accent_cyan'],
-                                   font=("Segoe UI", 9))
-        on_top_cb.pack(side=tk.TOP, anchor=tk.E, pady=(0, 5))
-        
-        # Toggle overlay checkbox
-        self.show_overlay_var = tk.BooleanVar(value=False)
-        overlay_cb = tk.Checkbutton(right_controls, text="Show Overlay",
-                                    variable=self.show_overlay_var,
-                                    command=self.toggle_overlay,
-                                    bg=THEME['bg_medium'], fg=THEME['text_secondary'],
-                                    selectcolor=THEME['bg_dark'],
-                                    activebackground=THEME['bg_medium'],
-                                    activeforeground=THEME['accent_cyan'],
-                                    font=("Segoe UI", 9))
-        overlay_cb.pack(side=tk.TOP, anchor=tk.E, pady=(0, 5))
-        
-        # Season label with auto-calculated value
+        # Season label at top with more space
         if self.season:
             start_date, end_date = self.get_season_dates(self.season)
             season_text = f"Season {self.season} ({start_date.strftime('%b %d')} - {end_date.strftime('%b %d')})"
@@ -297,7 +273,35 @@ class GFL2Scanner:
         self.season_label = tk.Label(right_controls, text=season_text,
                                      font=("Segoe UI", 11, "bold"), bg=THEME['bg_medium'],
                                      fg=season_color)
-        self.season_label.pack(side=tk.TOP, anchor=tk.E)
+        self.season_label.pack(side=tk.TOP, anchor=tk.E, pady=(0, 8))
+        
+        # Checkboxes side by side
+        checkbox_frame = tk.Frame(right_controls, bg=THEME['bg_medium'])
+        checkbox_frame.pack(side=tk.TOP, anchor=tk.E)
+        
+        # Always on top checkbox
+        self.always_on_top_var = tk.BooleanVar(value=True)
+        on_top_cb = tk.Checkbutton(checkbox_frame, text="Always on Top",
+                                   variable=self.always_on_top_var,
+                                   command=self.toggle_always_on_top,
+                                   bg=THEME['bg_medium'], fg=THEME['text_secondary'],
+                                   selectcolor=THEME['bg_dark'],
+                                   activebackground=THEME['bg_medium'],
+                                   activeforeground=THEME['accent_cyan'],
+                                   font=("Segoe UI", 9))
+        on_top_cb.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Toggle overlay checkbox
+        self.show_overlay_var = tk.BooleanVar(value=False)
+        overlay_cb = tk.Checkbutton(checkbox_frame, text="Show Overlay",
+                                    variable=self.show_overlay_var,
+                                    command=self.toggle_overlay,
+                                    bg=THEME['bg_medium'], fg=THEME['text_secondary'],
+                                    selectcolor=THEME['bg_dark'],
+                                    activebackground=THEME['bg_medium'],
+                                    activeforeground=THEME['accent_cyan'],
+                                    font=("Segoe UI", 9))
+        overlay_cb.pack(side=tk.LEFT)
         
         # Tabbed interface
         notebook = ttk.Notebook(self.root, style='Custom.TNotebook')
@@ -328,13 +332,17 @@ class GFL2Scanner:
                 font=("Segoe UI", 10), bg=THEME['bg_light'],
                 fg=THEME['text_secondary'], justify=tk.LEFT).pack(anchor=tk.W, padx=15, pady=(0, 15))
         
-        # Selection controls
+        # Selection controls - centered
         ctrl_frame = tk.Frame(parent, bg=THEME['bg_light'])
-        ctrl_frame.pack(fill=tk.X, padx=20, pady=10)
+        ctrl_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # Container for centering
+        center_container = tk.Frame(ctrl_frame, bg=THEME['bg_light'])
+        center_container.pack(expand=True)
         
         # Row selection
-        row_frame = tk.Frame(ctrl_frame, bg=THEME['bg_light'])
-        row_frame.pack(side=tk.LEFT, padx=20, pady=15)
+        row_frame = tk.Frame(center_container, bg=THEME['bg_light'])
+        row_frame.pack(side=tk.LEFT, padx=40, pady=15)
         
         tk.Label(row_frame, text="Select Row:", font=("Segoe UI", 11, "bold"),
                 bg=THEME['bg_light'], fg=THEME['text_primary']).pack(anchor=tk.W, pady=5)
@@ -350,8 +358,8 @@ class GFL2Scanner:
             rb.pack(anchor=tk.W, pady=2)
         
         # Column selection
-        col_frame = tk.Frame(ctrl_frame, bg=THEME['bg_light'])
-        col_frame.pack(side=tk.LEFT, padx=20, pady=15)
+        col_frame = tk.Frame(center_container, bg=THEME['bg_light'])
+        col_frame.pack(side=tk.LEFT, padx=40, pady=15)
         
         tk.Label(col_frame, text="Select Column:", font=("Segoe UI", 11, "bold"),
                 bg=THEME['bg_light'], fg=THEME['text_primary']).pack(anchor=tk.W, pady=5)
@@ -619,7 +627,31 @@ class GFL2Scanner:
                 frame.bind('<B1-Motion>', lambda e, o=overlay: self.do_drag_multi(e, o))
                 frame.bind('<ButtonRelease-1>', self.end_drag)
                 
+                # Also update selection when clicking overlay (not dragging)
+                overlay.click_start = None
+                frame.bind('<ButtonPress-1>', lambda e, o=overlay: self.on_overlay_press(e, o))
+                frame.bind('<ButtonRelease-1>', lambda e, o=overlay: self.on_overlay_release(e, o))
+                
                 self.overlay_windows.append(overlay)
+    
+    def on_overlay_press(self, event, overlay):
+        """Track click start position"""
+        overlay.click_start = (event.x_root, event.y_root)
+    
+    def on_overlay_release(self, event, overlay):
+        """Handle overlay click (if not dragged)"""
+        if hasattr(overlay, 'click_start') and overlay.click_start:
+            # Check if this was a click (not a drag)
+            dx = abs(event.x_root - overlay.click_start[0])
+            dy = abs(event.y_root - overlay.click_start[1])
+            
+            if dx < 5 and dy < 5:  # Threshold for click vs drag
+                # Auto-select this row and column
+                self.row_var.set(overlay.row_idx)
+                self.col_var.set(overlay.col_name)
+                self.update_region_info()
+            
+            overlay.click_start = None
     
     def start_drag_multi(self, event, overlay):
         """Start dragging overlay in multi-overlay mode"""
