@@ -1,37 +1,26 @@
-# Python
+# Build artifacts
+build/
+dist/
+*.spec
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-env/
+# Virtual environment
 venv/
+env/
 ENV/
 .venv
-
+# User-specific
+config.json
+results/
+easyocr_models/
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
-*~
-
 # OS
 .DS_Store
 Thumbs.db
-
-# Database
-*.db
-*.sqlite
-
-# Logs
-*.log
-docs/
-
-# App specific
-validation_output/
-easyocr_models/
-results/
-
-build/
-dist/
+RELEASE_GUIDE.md

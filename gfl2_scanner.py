@@ -69,7 +69,7 @@ class GFL2Scanner:
             self.season = season_num
             self.season_auto = True  # Track if auto-calculated
         else:
-            self.season = None  # Off-season
+            self.season = None
             self.season_auto = False
         
         # Region selector state
