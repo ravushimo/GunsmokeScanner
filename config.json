@@ -140,5 +140,11 @@
         332
       ]
     }
+  },
+  "gunsmoke_app": {
+    "api_url": "http://localhost:5000",
+    "save_credentials": true,
+    "username": "ravushimo",
+    "password_encrypted": "gAAAAABpMIQLCCetUdoeOzMoKde4BL7uCrvVSxSooeHS16pMMT-63qO_cBJrureskTAJnEX23iY4thjdehjI2ubwmM5mwvHz0Q=="
   }
 }

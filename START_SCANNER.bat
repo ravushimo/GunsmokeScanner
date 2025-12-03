@@ -5,5 +5,5 @@ echo ================================================
 echo.
 echo Starting scanner app...
 echo.
-python gfl2_scanner.py
+python GunsmokeScanner.py
 pause

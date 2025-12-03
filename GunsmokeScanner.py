@@ -1,7 +1,3 @@
-"""
-GFL2 Leaderboard OCR Scanner - Unified Application
-Combines visual region selector and capture tool with gunsmoke.app theme
-"""
 import json
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
@@ -16,6 +12,11 @@ import os
 from datetime import datetime, timedelta
 import keyboard
 import warnings
+import requests
+import base64
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 warnings.filterwarnings('ignore', message='.*pin_memory.*')
 
@@ -35,7 +36,7 @@ THEME = {
     'border': '#334155'             # Border color
 }
 
-class GFL2Scanner:
+class GunsmokeScanner:
     def __init__(self):
         # Create default config if it doesn't exist
         if not os.path.exists("config.json"):
@@ -89,7 +90,7 @@ class GFL2Scanner:
         
         # Setup main window
         self.root = tk.Tk()
-        self.root.title("GFL2 Leaderboard Scanner - gunsmoke.app")
+        self.root.title("Gunsmoke Scanner - gunsmoke.app")
         self.root.geometry("800x1000")
         self.root.configure(bg=THEME['bg_dark'])
         
@@ -105,7 +106,7 @@ class GFL2Scanner:
         # Show welcome message on first run
         if first_run:
             messagebox.showinfo("Welcome!", 
-                "Welcome to GFL2 Scanner!\n\n" +
+                "Welcome to Gunsmoke Scanner!\n\n" +
                 "This is your first run. Please go to the 'Setup Regions' tab " +
                 "to configure capture regions for your screen resolution.\n\n" +
                 "Click 'Show Overlay' to see and adjust the regions.")
@@ -145,7 +146,7 @@ class GFL2Scanner:
         
         # Add metadata
         default_config["metadata"] = {
-            "generated_by": "gfl2_scanner_default",
+            "generated_by": "gunsmoke_scanner_default",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "resolution": f"{screen_w}x{screen_h}",
             "note": "Default configuration - please adjust regions in Setup tab"
@@ -255,7 +256,7 @@ class GFL2Scanner:
         
         tk.Label(title_frame, text="⚡", font=("Arial", 24), 
                 bg=THEME['bg_medium'], fg=THEME['accent_cyan']).pack(side=tk.LEFT, padx=(0, 10))
-        tk.Label(title_frame, text="GFL2 Leaderboard Scanner",
+        tk.Label(title_frame, text="Gunsmoke Scanner",
                 font=("Segoe UI", 18, "bold"), bg=THEME['bg_medium'], 
                 fg=THEME['text_primary']).pack(side=tk.LEFT)
         
@@ -318,6 +319,11 @@ class GFL2Scanner:
         capture_tab = tk.Frame(notebook, bg=THEME['bg_dark'])
         notebook.add(capture_tab, text="📊 Capture Data")
         self.create_capture_tab(capture_tab)
+        
+        # Upload tab
+        upload_tab = tk.Frame(notebook, bg=THEME['bg_dark'])
+        notebook.add(upload_tab, text="🌐 Upload")
+        self.create_upload_tab(upload_tab)
         
     def create_setup_tab(self, parent):
         """Create the region setup tab"""
@@ -465,7 +471,7 @@ class GFL2Scanner:
         
         self.tree.heading("Season", text="Season")
         self.tree.heading("IGN", text="IGN (Nickname)")
-        self.tree.heading("Top Score", text="Single High")
+        self.tree.heading("Top Score", text="Single High Score")
         self.tree.heading("Total Score", text="Total Score")
         
         self.tree.column("Season", width=80, anchor=tk.CENTER)
@@ -1040,9 +1046,9 @@ class GFL2Scanner:
         df = df.sort_values("totalscore", ascending=False)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"./results/GFL2_Season{self.season}_{timestamp}.csv"
+        filename = f"./results/Gunsmoke_Season{self.season}_{timestamp}.csv"
         
-        df.to_csv(filename, index=False, encoding='utf-8-sig')
+        df.to_csv(filename, index=False, encoding='utf-8')
         
         messagebox.showinfo("Saved", f"✓ Data saved!\n\n{filename}\n\nTotal players: {len(df)}")
         self.status_label.config(text=f"Saved {len(df)} players to {filename}")
@@ -1051,6 +1057,423 @@ class GFL2Scanner:
         """Start the application"""
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.root.mainloop()
+    
+    # ============================================================================
+    # Upload to Gunsmoke.app Methods
+    # ============================================================================
+    
+    def get_encryption_key(self):
+        """Generate encryption key from machine-specific identifier"""
+        # Use a combination of machine-specific identifiers
+        import platform
+        import uuid
+        
+        machine_id = f"{platform.node()}-{uuid.getnode()}"
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b'gunsmoke_scanner_salt',  # Static salt (acceptable for machine-specific encryption)
+            iterations=100000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(machine_id.encode()))
+        return key
+    
+    def encrypt_password(self, password):
+        """Encrypt password for storage"""
+        if not password:
+            return ""
+        try:
+            key = self.get_encryption_key()
+            cipher = Fernet(key)
+            return cipher.encrypt(password.encode()).decode()
+        except Exception as e:
+            print(f"Encryption error: {e}")
+            return ""
+    
+    def decrypt_password(self, encrypted_password):
+        """Decrypt password from storage"""
+        if not encrypted_password:
+            return ""
+        try:
+            key = self.get_encryption_key()
+            cipher = Fernet(key)
+            return cipher.decrypt(encrypted_password.encode()).decode()
+        except Exception as e:
+            print(f"Decryption error: {e}")
+            return ""
+    
+    def create_upload_tab(self, parent):
+        """Create the upload tab for gunsmoke.app integration"""
+        # Main container with padding
+        main_frame = tk.Frame(parent, bg=THEME['bg_dark'])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = tk.Label(main_frame, text="Upload to Gunsmoke.app",
+                              font=("Segoe UI", 16, "bold"), bg=THEME['bg_dark'],
+                              fg=THEME['text_primary'])
+        title_label.pack(pady=(0, 20))
+        
+        # Authentication Card (now includes API selector)
+        auth_frame = tk.Frame(main_frame, bg=THEME['bg_light'])
+        auth_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        tk.Label(auth_frame, text="Authentication", font=("Segoe UI", 12, "bold"),
+                bg=THEME['bg_light'], fg=THEME['text_primary']).pack(anchor=tk.W, padx=15, pady=(15, 10))
+        
+        # API Environment selector
+        env_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        env_frame.pack(fill=tk.X, padx=15, pady=5)
+        
+        tk.Label(env_frame, text="Environment:", bg=THEME['bg_light'],
+                fg=THEME['text_secondary'], font=("Segoe UI", 10), width=15, anchor=tk.W).pack(side=tk.LEFT)
+        
+        # Dropdown with production and localhost options
+        upload_config = self.config.get('gunsmoke_app', {})
+        saved_url = upload_config.get('api_url', 'http://localhost:5000')
+        
+        # Determine initial selection
+        if 'localhost' in saved_url or '127.0.0.1' in saved_url:
+            default_env = 'Localhost (Development)'
+        else:
+            default_env = 'Gunsmoke.app (Production)'
+        
+        self.api_env_var = tk.StringVar(value=default_env)
+        env_dropdown = ttk.Combobox(env_frame, textvariable=self.api_env_var,
+                                   values=['Gunsmoke.app (Production)', 'Localhost (Development)'],
+                                   state='readonly', width=30)
+        env_dropdown.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Test connection button
+        test_btn = self.create_button(env_frame, "Test", self.test_connection, THEME['accent_cyan'])
+        test_btn.pack(side=tk.LEFT)
+        
+        # Username
+        user_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        user_frame.pack(fill=tk.X, padx=15, pady=5)
+        
+        tk.Label(user_frame, text="Username:", bg=THEME['bg_light'],
+                fg=THEME['text_secondary'], font=("Segoe UI", 10), width=15, anchor=tk.W).pack(side=tk.LEFT)
+        
+        self.username_entry = tk.Entry(user_frame, bg=THEME['bg_medium'],
+                                       fg=THEME['text_primary'], font=("Consolas", 10),
+                                       insertbackground=THEME['accent_cyan'])
+        self.username_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Load saved username
+        saved_username = upload_config.get('username', '')
+        if saved_username:
+            self.username_entry.insert(0, saved_username)
+        
+        # Password
+        pass_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        pass_frame.pack(fill=tk.X, padx=15, pady=5)
+        
+        tk.Label(pass_frame, text="Password:", bg=THEME['bg_light'],
+                fg=THEME['text_secondary'], font=("Segoe UI", 10), width=15, anchor=tk.W).pack(side=tk.LEFT)
+        
+        self.password_entry = tk.Entry(pass_frame, bg=THEME['bg_medium'], show="*",
+                                       fg=THEME['text_primary'], font=("Consolas", 10),
+                                       insertbackground=THEME['accent_cyan'])
+        self.password_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Load saved password (encrypted)
+        saved_password_enc = upload_config.get('password_encrypted', '')
+        if saved_password_enc:
+            decrypted = self.decrypt_password(saved_password_enc)
+            if decrypted:
+                self.password_entry.insert(0, decrypted)
+        
+        # Save credentials checkbox
+        cred_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        cred_frame.pack(fill=tk.X, padx=15, pady=5)
+        
+        self.save_creds_var = tk.BooleanVar(value=upload_config.get('save_credentials', False))
+        save_creds_cb = tk.Checkbutton(cred_frame, text="Save credentials (encrypted)",
+                                       variable=self.save_creds_var,
+                                       bg=THEME['bg_light'], fg=THEME['text_secondary'],
+                                       selectcolor=THEME['bg_dark'],
+                                       activebackground=THEME['bg_light'],
+                                       activeforeground=THEME['accent_cyan'],
+                                       font=("Segoe UI", 9))
+        save_creds_cb.pack(side=tk.LEFT, padx=(130, 0))
+        
+        # Verify button
+        verify_btn_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        verify_btn_frame.pack(fill=tk.X, padx=15, pady=(10, 15))
+        
+        self.verify_btn = self.create_button(verify_btn_frame, "Verify Login & Permissions", 
+                                             self.verify_credentials, THEME['accent_cyan'])
+        self.verify_btn.pack()
+        
+        # Guild info display (populated after verification)
+        self.guild_info_label = tk.Label(auth_frame, text="", bg=THEME['bg_light'],
+                                         fg=THEME['text_secondary'], font=("Segoe UI", 9))
+        self.guild_info_label.pack(pady=(0, 15))
+        
+        # Upload Options Card
+        options_frame = tk.Frame(main_frame, bg=THEME['bg_light'])
+        options_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        tk.Label(options_frame, text="Upload Options", font=("Segoe UI", 12, "bold"),
+                bg=THEME['bg_light'], fg=THEME['text_primary']).pack(anchor=tk.W, padx=15, pady=(15, 10))
+        
+        # Remove missing checkbox
+        remove_frame = tk.Frame(options_frame, bg=THEME['bg_light'])
+        remove_frame.pack(fill=tk.X, padx=15, pady=5)
+        
+        self.remove_missing_var = tk.BooleanVar(value=False)
+        remove_cb = tk.Checkbutton(remove_frame, 
+                                   text="Mark commanders not in CSV as left",
+                                   variable=self.remove_missing_var,
+                                   bg=THEME['bg_light'], fg=THEME['text_secondary'],
+                                   selectcolor=THEME['bg_dark'],
+                                   activebackground=THEME['bg_light'],
+                                   activeforeground=THEME['accent_cyan'],
+                                   font=("Segoe UI", 10))
+        remove_cb.pack(anchor=tk.W)
+        
+        tk.Frame(options_frame, bg=THEME['bg_light'], height=15).pack()
+        
+        # Upload Button
+        upload_btn_frame = tk.Frame(main_frame, bg=THEME['bg_dark'])
+        upload_btn_frame.pack(fill=tk.X, pady=(10, 10))
+        
+        self.upload_btn = self.create_button(upload_btn_frame, "🚀 Upload Last CSV to Gunsmoke.app",
+                                             self.upload_to_gunsmoke_app, THEME['success'])
+        self.upload_btn.pack()
+        
+        # Upload status display (increased height)
+        status_frame = tk.Frame(main_frame, bg=THEME['bg_medium'])
+        status_frame.pack(fill=tk.BOTH, expand=True)
+        
+        tk.Label(status_frame, text="Upload Status", font=("Segoe UI", 11, "bold"),
+                bg=THEME['bg_medium'], fg=THEME['text_primary']).pack(anchor=tk.W, padx=15, pady=(15, 10))
+        
+        # Status text area (scrollable) - increased height
+        status_scroll = tk.Scrollbar(status_frame)
+        status_scroll.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 15))
+        
+        self.upload_status_text = tk.Text(status_frame, height=15, bg=THEME['bg_light'],
+                                          fg=THEME['text_secondary'], font=("Consolas", 9),
+                                          wrap=tk.WORD, yscrollcommand=status_scroll.set)
+        self.upload_status_text.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+        status_scroll.config(command=self.upload_status_text.yview)
+        
+        # Initial status
+        self.log_upload_status("Ready. Configure authentication and upload your CSV.\n")
+    
+    def log_upload_status(self, message):
+        """Log message to upload status text area"""
+        self.upload_status_text.insert(tk.END, message)
+        self.upload_status_text.see(tk.END)
+    
+    def test_connection(self):
+        """Test connection to gunsmoke.app API"""
+        # Get URL from dropdown selection
+        env = self.api_env_var.get()
+        if 'Production' in env:
+            api_url = 'https://gunsmoke.app'
+        else:
+            api_url = 'http://localhost:5000'
+        
+        test_url = f"{api_url}/health"
+        
+        self.log_upload_status(f"[INFO] Testing connection to {test_url}...\n")
+        
+        try:
+            response = requests.get(test_url, timeout=10)
+            if response.status_code == 200:
+                self.log_upload_status("[SUCCESS] ✓ Connection successful!\n")
+                # Save URL
+                self.save_upload_config()
+            else:
+                self.log_upload_status(f"[WARNING] Server responded with status {response.status_code}\n")
+        except requests.exceptions.ConnectionError:
+            self.log_upload_status("[ERROR] ✗ Connection failed. Is the server running?\n")
+        except requests.exceptions.Timeout:
+            self.log_upload_status("[ERROR] ✗ Connection timeout\n")
+        except Exception as e:
+            self.log_upload_status(f"[ERROR] Connection test failed: {str(e)}\n")
+    
+    def verify_credentials(self):
+        """Verify user credentials and permissions"""
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get()
+        
+        # Get URL from dropdown selection
+        env = self.api_env_var.get()
+        if 'Production' in env:
+            api_url = 'https://gunsmoke.app'
+        else:
+            api_url = 'http://localhost:5000'
+        
+        if not username or not password:
+            self.log_upload_status("[ERROR] Please enter username and password\n")
+            return
+        
+        verify_url = f"{api_url}/api/v1/auth/verify"
+        
+        self.log_upload_status(f"[INFO] Verifying credentials for '{username}'...\n")
+        
+        try:
+            response = requests.post(
+                verify_url,
+                json={'username': username, 'password': password},
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            
+            result = response.json()
+            
+            if response.status_code == 200 and result.get('success'):
+                data = result.get('data', {})
+                guild_name = data.get('guild_name', 'Unknown')
+                role = data.get('role', 'Unknown')
+                
+                self.log_upload_status(f"[SUCCESS] ✓ Authenticated as {username}\n")
+                self.log_upload_status(f"[INFO] Guild: {guild_name}, Role: {role}\n")
+                
+                # Update guild info display
+                self.guild_info_label.config(
+                    text=f"✓ Authenticated | Guild: {guild_name} | Role: {role.capitalize()}",
+                    fg=THEME['success']
+                )
+                
+                # Save credentials if checkbox is checked
+                if self.save_creds_var.get():
+                    self.save_upload_config()
+                    self.log_upload_status("[INFO] Credentials saved (encrypted)\n")
+            else:
+                error_msg = result.get('message', 'Unknown error')
+                self.log_upload_status(f"[ERROR] ✗ Authentication failed: {error_msg}\n")
+                self.guild_info_label.config(text="✗ Authentication failed", fg=THEME['danger'])
+                
+        except requests.exceptions.RequestException as e:
+            self.log_upload_status(f"[ERROR] Connection error: {str(e)}\n")
+            self.guild_info_label.config(text="✗ Connection error", fg=THEME['danger'])
+        except Exception as e:
+            self.log_upload_status(f"[ERROR] Verification failed: {str(e)}\n")
+            self.guild_info_label.config(text="✗ Verification error", fg=THEME['danger'])
+    
+    def save_upload_config(self):
+        """Save upload configuration to config.json"""
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get()
+        save_creds = self.save_creds_var.get()
+        
+        # Get URL from dropdown selection
+        env = self.api_env_var.get()
+        if 'Production' in env:
+            api_url = 'https://gunsmoke.app'
+        else:
+            api_url = 'http://localhost:5000'
+        
+        # Ensure gunsmoke_app section exists
+        if 'gunsmoke_app' not in self.config:
+            self.config['gunsmoke_app'] = {}
+        
+        self.config['gunsmoke_app']['api_url'] = api_url
+        self.config['gunsmoke_app']['save_credentials'] = save_creds
+        
+        if save_creds and username and password:
+            self.config['gunsmoke_app']['username'] = username
+            self.config['gunsmoke_app']['password_encrypted'] = self.encrypt_password(password)
+        else:
+            # Clear saved credentials
+            self.config['gunsmoke_app']['username'] = ''
+            self.config['gunsmoke_app']['password_encrypted'] = ''
+        
+        # Save to file
+        try:
+            with open("config.json", "w") as f:
+                json.dump(self.config, f, indent=2)
+        except Exception as e:
+            self.log_upload_status(f"[ERROR] Failed to save config: {str(e)}\n")
+    
+    def upload_to_gunsmoke_app(self):
+        """Upload last saved CSV to gunsmoke.app"""
+        # Find most recent CSV in results folder
+        import glob
+        
+        csv_files = glob.glob("./results/*.csv")
+        if not csv_files:
+            self.log_upload_status("[ERROR] No CSV files found in ./results/ folder\n")
+            self.log_upload_status("[INFO] Please capture and save data first (Capture Data tab)\n")
+            return
+        
+        # Get most recent file
+        latest_csv = max(csv_files, key=os.path.getmtime)
+        
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get()
+        remove_missing = '1' if self.remove_missing_var.get() else '0'
+        
+        # Get URL from dropdown selection
+        env = self.api_env_var.get()
+        if 'Production' in env:
+            api_url = 'https://gunsmoke.app'
+        else:
+            api_url = 'http://localhost:5000'
+        
+        if not username or not password:
+            self.log_upload_status("[ERROR] Please enter username and password\n")
+            return
+        
+        # Build endpoint URL
+        upload_url = f"{api_url}/api/v1/gunsmoke/upload"
+        
+        self.log_upload_status(f"\n[INFO] Uploading {os.path.basename(latest_csv)}...\n")
+        
+        try:
+            with open(latest_csv, 'rb') as f:
+                files = {'csv_file': (os.path.basename(latest_csv), f, 'text/csv')}
+                data = {
+                    'username': username,
+                    'password': password,
+                    'remove_missing': remove_missing
+                }
+                
+                response = requests.post(upload_url, files=files, data=data, timeout=30)
+                result = response.json()
+                
+                if response.status_code == 200 and result.get('success'):
+                    upload_data = result.get('data', {})
+                    message = result.get('message', 'Upload successful')
+                    
+                    self.log_upload_status(f"[SUCCESS] ✓ {message}\n")
+                    self.log_upload_status(f"[INFO] Processed: {upload_data.get('total', 0)}, ")
+                    self.log_upload_status(f"Success: {upload_data.get('success', 0)}, ")
+                    self.log_upload_status(f"Skipped: {upload_data.get('skipped', 0)}\n")
+                    
+                    if upload_data.get('removed', 0) > 0:
+                        self.log_upload_status(f"[INFO] Removed: {upload_data.get('removed', 0)} commander(s)\n")
+                    
+                    if upload_data.get('affected_seasons'):
+                        seasons = ', '.join(map(str, upload_data['affected_seasons']))
+                        self.log_upload_status(f"[INFO] Updated seasons: {seasons}\n")
+                    
+                    # Show errors if any
+                    errors = upload_data.get('errors', [])
+                    if errors:
+                        self.log_upload_status(f"[WARNING] Errors encountered:\n")
+                        for error in errors[:5]:  # Show first 5
+                            self.log_upload_status(f"  - {error}\n")
+                        if len(errors) > 5:
+                            self.log_upload_status(f"  ... and {len(errors) - 5} more\n")
+                    
+                    # Save credentials if checkbox is checked
+                    if self.save_creds_var.get():
+                        self.save_upload_config()
+                        
+                else:
+                    error_msg = result.get('message', 'Unknown error')
+                    self.log_upload_status(f"[ERROR] ✗ Upload failed: {error_msg}\n")
+                    
+        except requests.exceptions.RequestException as e:
+            self.log_upload_status(f"[ERROR] Connection error: {str(e)}\n")
+        except Exception as e:
+            self.log_upload_status(f"[ERROR] Upload failed: {str(e)}\n")
     
     def on_closing(self):
         """Handle window closing"""
@@ -1072,5 +1495,5 @@ class GFL2Scanner:
         self.root.destroy()
 
 if __name__ == "__main__":
-    app = GFL2Scanner()
+    app = GunsmokeScanner()
     app.run()

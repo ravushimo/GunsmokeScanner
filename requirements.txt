@@ -6,3 +6,5 @@ easyocr
 pandas
 numpy
 colorama
+requests
+cryptography

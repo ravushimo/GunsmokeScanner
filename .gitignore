@@ -24,3 +24,5 @@ easyocr_models/
 .DS_Store
 Thumbs.db
 RELEASE_GUIDE.md
+.gitignore
+FrontlineSmoke/
