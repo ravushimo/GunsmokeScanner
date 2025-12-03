@@ -1114,11 +1114,11 @@ class GunsmokeScanner:
                               fg=THEME['text_primary'])
         title_label.pack(pady=(0, 20))
         
-        # Authentication Card (now includes API selector)
+        # Authentication Card (includes everything except status)
         auth_frame = tk.Frame(main_frame, bg=THEME['bg_light'])
         auth_frame.pack(fill=tk.X, pady=(0, 15))
         
-        tk.Label(auth_frame, text="Authentication", font=("Segoe UI", 12, "bold"),
+        tk.Label(auth_frame, text="Authentication & Upload", font=("Segoe UI", 12, "bold"),
                 bg=THEME['bg_light'], fg=THEME['text_primary']).pack(anchor=tk.W, padx=15, pady=(15, 10))
         
         # API Environment selector
@@ -1128,9 +1128,9 @@ class GunsmokeScanner:
         tk.Label(env_frame, text="Environment:", bg=THEME['bg_light'],
                 fg=THEME['text_secondary'], font=("Segoe UI", 10), width=15, anchor=tk.W).pack(side=tk.LEFT)
         
-        # Dropdown with production and localhost options
+        # Dropdown with production as default
         upload_config = self.config.get('gunsmoke_app', {})
-        saved_url = upload_config.get('api_url', 'http://localhost:5000')
+        saved_url = upload_config.get('api_url', 'https://gunsmoke.app')  # Default to production
         
         # Determine initial selection
         if 'localhost' in saved_url or '127.0.0.1' in saved_url:
@@ -1198,32 +1198,17 @@ class GunsmokeScanner:
                                        font=("Segoe UI", 9))
         save_creds_cb.pack(side=tk.LEFT, padx=(130, 0))
         
-        # Verify button
-        verify_btn_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
-        verify_btn_frame.pack(fill=tk.X, padx=15, pady=(10, 15))
-        
-        self.verify_btn = self.create_button(verify_btn_frame, "Verify Login & Permissions", 
-                                             self.verify_credentials, THEME['accent_cyan'])
-        self.verify_btn.pack()
-        
         # Guild info display (populated after verification)
         self.guild_info_label = tk.Label(auth_frame, text="", bg=THEME['bg_light'],
                                          fg=THEME['text_secondary'], font=("Segoe UI", 9))
-        self.guild_info_label.pack(pady=(0, 15))
+        self.guild_info_label.pack(pady=(5, 10))
         
-        # Upload Options Card
-        options_frame = tk.Frame(main_frame, bg=THEME['bg_light'])
-        options_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        tk.Label(options_frame, text="Upload Options", font=("Segoe UI", 12, "bold"),
-                bg=THEME['bg_light'], fg=THEME['text_primary']).pack(anchor=tk.W, padx=15, pady=(15, 10))
-        
-        # Remove missing checkbox
-        remove_frame = tk.Frame(options_frame, bg=THEME['bg_light'])
-        remove_frame.pack(fill=tk.X, padx=15, pady=5)
+        # Upload Options - moved above buttons
+        options_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        options_frame.pack(fill=tk.X, padx=15, pady=(5, 10))
         
         self.remove_missing_var = tk.BooleanVar(value=False)
-        remove_cb = tk.Checkbutton(remove_frame, 
+        remove_cb = tk.Checkbutton(options_frame, 
                                    text="Mark commanders not in CSV as left",
                                    variable=self.remove_missing_var,
                                    bg=THEME['bg_light'], fg=THEME['text_secondary'],
@@ -1231,17 +1216,37 @@ class GunsmokeScanner:
                                    activebackground=THEME['bg_light'],
                                    activeforeground=THEME['accent_cyan'],
                                    font=("Segoe UI", 10))
-        remove_cb.pack(anchor=tk.W)
+        remove_cb.pack(anchor=tk.W, padx=(115, 0))
         
-        tk.Frame(options_frame, bg=THEME['bg_light'], height=15).pack()
+        # Buttons side by side - Verify on left, Upload on right
+        buttons_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        buttons_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
         
-        # Upload Button
-        upload_btn_frame = tk.Frame(main_frame, bg=THEME['bg_dark'])
-        upload_btn_frame.pack(fill=tk.X, pady=(10, 10))
+        # Left side - Verify button
+        left_btn_frame = tk.Frame(buttons_frame, bg=THEME['bg_light'])
+        left_btn_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        self.upload_btn = self.create_button(upload_btn_frame, "🚀 Upload Last CSV to Gunsmoke.app",
+        self.verify_btn = self.create_button(left_btn_frame, "Verify Login & Permissions", 
+                                             self.verify_credentials, THEME['accent_cyan'])
+        self.verify_btn.pack(side=tk.LEFT)
+        
+        # Right side - Upload button
+        right_btn_frame = tk.Frame(buttons_frame, bg=THEME['bg_light'])
+        right_btn_frame.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        
+        self.upload_btn = self.create_button(right_btn_frame, "🚀 Upload Last CSV",
                                              self.upload_to_gunsmoke_app, THEME['success'])
-        self.upload_btn.pack()
+        self.upload_btn.pack(side=tk.RIGHT)
+        
+        # Info text below buttons
+        info_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        info_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
+        
+        info_text = tk.Label(info_frame, 
+                            text="ℹ Results are automatically saved to CSV files in ./results/ folder",
+                            bg=THEME['bg_light'], fg=THEME['text_muted'], 
+                            font=("Segoe UI", 9, "italic"))
+        info_text.pack()
         
         # Upload status display (increased height)
         status_frame = tk.Frame(main_frame, bg=THEME['bg_medium'])
@@ -1250,11 +1255,11 @@ class GunsmokeScanner:
         tk.Label(status_frame, text="Upload Status", font=("Segoe UI", 11, "bold"),
                 bg=THEME['bg_medium'], fg=THEME['text_primary']).pack(anchor=tk.W, padx=15, pady=(15, 10))
         
-        # Status text area (scrollable) - increased height
+        # Status text area (scrollable) - increased height from removed sections
         status_scroll = tk.Scrollbar(status_frame)
         status_scroll.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 15))
         
-        self.upload_status_text = tk.Text(status_frame, height=15, bg=THEME['bg_light'],
+        self.upload_status_text = tk.Text(status_frame, height=20, bg=THEME['bg_light'],
                                           fg=THEME['text_secondary'], font=("Consolas", 9),
                                           wrap=tk.WORD, yscrollcommand=status_scroll.set)
         self.upload_status_text.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
