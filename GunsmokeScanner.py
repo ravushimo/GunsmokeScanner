@@ -294,6 +294,9 @@ class GunsmokeScanner:
                                    font=("Segoe UI", 9))
         on_top_cb.pack(side=tk.LEFT, padx=(0, 10))
         
+        # Apply initial always on top state
+        self.root.attributes('-topmost', True)
+        
         # Toggle overlay checkbox
         self.show_overlay_var = tk.BooleanVar(value=False)
         overlay_cb = tk.Checkbutton(checkbox_frame, text="Show Overlay",
@@ -1184,43 +1187,41 @@ class GunsmokeScanner:
             if decrypted:
                 self.password_entry.insert(0, decrypted)
         
-        # Save credentials checkbox
-        cred_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
-        cred_frame.pack(fill=tk.X, padx=15, pady=5)
+        # Both checkboxes on same line
+        checkbox_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
+        checkbox_frame.pack(fill=tk.X, padx=15, pady=5)
         
+        # Left side - Save credentials
         self.save_creds_var = tk.BooleanVar(value=upload_config.get('save_credentials', False))
-        save_creds_cb = tk.Checkbutton(cred_frame, text="Save credentials (encrypted)",
+        save_creds_cb = tk.Checkbutton(checkbox_frame, text="Save credentials (encrypted)",
                                        variable=self.save_creds_var,
                                        bg=THEME['bg_light'], fg=THEME['text_secondary'],
                                        selectcolor=THEME['bg_dark'],
                                        activebackground=THEME['bg_light'],
                                        activeforeground=THEME['accent_cyan'],
                                        font=("Segoe UI", 9))
-        save_creds_cb.pack(side=tk.LEFT, padx=(130, 0))
+        save_creds_cb.pack(side=tk.LEFT, padx=(115, 20))
         
-        # Guild info display (populated after verification)
-        self.guild_info_label = tk.Label(auth_frame, text="", bg=THEME['bg_light'],
-                                         fg=THEME['text_secondary'], font=("Segoe UI", 9))
-        self.guild_info_label.pack(pady=(5, 10))
-        
-        # Upload Options - moved above buttons
-        options_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
-        options_frame.pack(fill=tk.X, padx=15, pady=(5, 10))
-        
+        # Right side - Remove missing commanders
         self.remove_missing_var = tk.BooleanVar(value=False)
-        remove_cb = tk.Checkbutton(options_frame, 
+        remove_cb = tk.Checkbutton(checkbox_frame, 
                                    text="Mark commanders not in CSV as left",
                                    variable=self.remove_missing_var,
                                    bg=THEME['bg_light'], fg=THEME['text_secondary'],
                                    selectcolor=THEME['bg_dark'],
                                    activebackground=THEME['bg_light'],
                                    activeforeground=THEME['accent_cyan'],
-                                   font=("Segoe UI", 10))
-        remove_cb.pack(anchor=tk.W, padx=(115, 0))
+                                   font=("Segoe UI", 9))
+        remove_cb.pack(side=tk.LEFT)
         
-        # Buttons side by side - Verify on left, Upload on right
+        # Guild info display (populated after verification) - minimal spacing
+        self.guild_info_label = tk.Label(auth_frame, text="", bg=THEME['bg_light'],
+                                         fg=THEME['text_secondary'], font=("Segoe UI", 9))
+        self.guild_info_label.pack(pady=(5, 5))
+        
+        # Buttons side by side - moved up
         buttons_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
-        buttons_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
+        buttons_frame.pack(fill=tk.X, padx=15, pady=(5, 10))
         
         # Left side - Verify button
         left_btn_frame = tk.Frame(buttons_frame, bg=THEME['bg_light'])
@@ -1238,28 +1239,28 @@ class GunsmokeScanner:
                                              self.upload_to_gunsmoke_app, THEME['success'])
         self.upload_btn.pack(side=tk.RIGHT)
         
-        # Info text below buttons
+        # Info text below buttons - updated message
         info_frame = tk.Frame(auth_frame, bg=THEME['bg_light'])
         info_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
         
         info_text = tk.Label(info_frame, 
-                            text="ℹ Results are automatically saved to CSV files in ./results/ folder",
+                            text="ℹ Make sure latest results are saved to CSV file in Capture Data tab",
                             bg=THEME['bg_light'], fg=THEME['text_muted'], 
                             font=("Segoe UI", 9, "italic"))
         info_text.pack()
         
-        # Upload status display (increased height)
+        # Upload status display (increased height to 24 lines)
         status_frame = tk.Frame(main_frame, bg=THEME['bg_medium'])
         status_frame.pack(fill=tk.BOTH, expand=True)
         
         tk.Label(status_frame, text="Upload Status", font=("Segoe UI", 11, "bold"),
                 bg=THEME['bg_medium'], fg=THEME['text_primary']).pack(anchor=tk.W, padx=15, pady=(15, 10))
         
-        # Status text area (scrollable) - increased height from removed sections
+        # Status text area (scrollable) - increased to 24 lines
         status_scroll = tk.Scrollbar(status_frame)
         status_scroll.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 15))
         
-        self.upload_status_text = tk.Text(status_frame, height=20, bg=THEME['bg_light'],
+        self.upload_status_text = tk.Text(status_frame, height=24, bg=THEME['bg_light'],
                                           fg=THEME['text_secondary'], font=("Consolas", 9),
                                           wrap=tk.WORD, yscrollcommand=status_scroll.set)
         self.upload_status_text.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
