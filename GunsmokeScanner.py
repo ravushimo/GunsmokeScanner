@@ -640,42 +640,19 @@ class GunsmokeScanner:
                 overlay.col_name = col_name
                 overlay.label_win = label_win  # Keep reference to label
                 
-                # Bind mouse drag
+                # Bind mouse drag - consolidated to avoid conflicts
                 frame.bind('<Button-1>', lambda e, o=overlay: self.start_drag_multi(e, o))
                 frame.bind('<B1-Motion>', lambda e, o=overlay: self.do_drag_multi(e, o))
-                frame.bind('<ButtonRelease-1>', self.end_drag)
-                
-                # Also update selection when clicking overlay (not dragging)
-                overlay.click_start = None
-                frame.bind('<ButtonPress-1>', lambda e, o=overlay: self.on_overlay_press(e, o))
-                frame.bind('<ButtonRelease-1>', lambda e, o=overlay: self.on_overlay_release(e, o))
+                frame.bind('<ButtonRelease-1>', lambda e, o=overlay: self.end_drag_multi(e, o))
                 
                 self.overlay_windows.append(overlay)
-    
-    def on_overlay_press(self, event, overlay):
-        """Track click start position"""
-        overlay.click_start = (event.x_root, event.y_root)
-    
-    def on_overlay_release(self, event, overlay):
-        """Handle overlay click (if not dragged)"""
-        if hasattr(overlay, 'click_start') and overlay.click_start:
-            # Check if this was a click (not a drag)
-            dx = abs(event.x_root - overlay.click_start[0])
-            dy = abs(event.y_root - overlay.click_start[1])
-            
-            if dx < 5 and dy < 5:  # Threshold for click vs drag
-                # Auto-select this row and column
-                self.row_var.set(overlay.row_idx)
-                self.col_var.set(overlay.col_name)
-                self.update_region_info()
-            
-            overlay.click_start = None
     
     def start_drag_multi(self, event, overlay):
         """Start dragging overlay in multi-overlay mode"""
         self.dragging = True
         self.drag_start = (event.x_root, event.y_root)
         self.dragging_overlay = overlay
+        overlay.drag_moved = False  # Track if actually dragged
     
     def do_drag_multi(self, event, overlay):
         """Drag overlay in multi-overlay mode"""
@@ -684,6 +661,10 @@ class GunsmokeScanner:
         
         dx = event.x_root - self.drag_start[0]
         dy = event.y_root - self.drag_start[1]
+        
+        # Mark as moved if dragged more than threshold
+        if abs(dx) > 3 or abs(dy) > 3:
+            overlay.drag_moved = True
         
         # Get the bbox for this specific overlay
         row_idx = overlay.row_idx
@@ -709,8 +690,15 @@ class GunsmokeScanner:
         
         self.drag_start = (event.x_root, event.y_root)
     
-    def end_drag(self, event):
-        """End dragging"""
+    def end_drag_multi(self, event, overlay):
+        """End dragging and handle click selection"""
+        if self.dragging and self.dragging_overlay == overlay:
+            # If not moved (was a click), auto-select this region
+            if not getattr(overlay, 'drag_moved', False):
+                self.row_var.set(overlay.row_idx)
+                self.col_var.set(overlay.col_name)
+                self.update_region_info()
+        
         self.dragging = False
     
     def adjust_position(self, dx, dy):
