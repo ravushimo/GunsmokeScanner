@@ -16,6 +16,7 @@ ENV/
 config.json
 results/
 easyocr_models/
+GunsmokeScanner_legacy.py
 # IDE
 .vscode/
 .idea/
@@ -23,6 +24,4 @@ easyocr_models/
 # OS
 .DS_Store
 Thumbs.db
-RELEASE_GUIDE.md
-.gitignore
 FrontlineSmoke/
