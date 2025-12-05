@@ -1,7 +1,7 @@
 # Gunsmoke Scanner
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
-![Python](https://img.shields.io/badge/python-3.7+-green)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Python](https://img.shields.io/badge/python-3.9+-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
 
 A powerful OCR-based tool for scanning and extracting leaderboard data from Girls Frontline 2 (GFL2) game screenshots. Features automatic season calculation, visual region configuration, and inline data editing.
@@ -11,10 +11,13 @@ A powerful OCR-based tool for scanning and extracting leaderboard data from Girl
 - **🎯 Visual Region Setup**: Click-to-select and drag overlays to configure capture regions
 - **📅 Auto Season Calculation**: Automatically calculates current GFL2 season based on date (7-day seasons + 14-day breaks)
 - **🔍 Intelligent OCR**: Uses EasyOCR with GPU acceleration for accurate Chinese and English text recognition
+- **⚡ Threaded Capture**: Capture process runs in background to keep UI responsive
 - **✏️ Inline Editing**: Double-click any cell to edit data directly in the table
-- **💾 CSV Export**: Export captured data in standardized format (season, ign, topscore, totalscore)
+- **✨ Guild Rank Support**: Option to include Guild Rank when saving data
+- **💾 CSV Export**: Export captured data in standardized format (season, ign, topscore, totalscore, guildrank)
+- **🔄 Auto Updates**: Checks GitHub releases for new versions on startup
+- **🌐 Cloud Upload**: Direct upload integration with gunsmoke.app
 - **🎨 Modern UI**: Dark theme with cyan accents inspired by gunsmoke.app
-- **⌨️ Hotkey Support**: F9 to capture, Enter to navigate cells
 - **🪟 Always on Top**: Optional window mode for easy multitasking
 
 ## 📚 Libraries Used
@@ -39,12 +42,6 @@ A powerful OCR-based tool for scanning and extracting leaderboard data from Girl
 | **tkinter** | Main GUI framework (built-in with Python) |
 | **ttk** | Themed widgets for modern appearance |
 
-### Build Tool
-
-| Library | Purpose |
-|---------|---------|
-| **PyInstaller** | Package app into standalone executable |
-
 ## 🚀 How It Works
 
 ### 1. **Region Configuration**
@@ -61,15 +58,9 @@ Regions are saved to `config.json` for persistence.
 
 ### 2. **Season Calculation**
 
-The app automatically calculates the current GFL2 season:
-
-```
-Reference: Season 17 = Nov 30 - Dec 6, 2025 (Sunday to Saturday)
-Pattern: 7 days active → 14 days break → repeat (21-day cycle)
-```
+The app automatically calculates the current GFL2 season based on a reference date.
 
 - **Auto-detection**: Shows current season with dates on launch
-- **Off-season handling**: Displays "Off-Season Break" during break periods
 - **Manual override**: Click "Set Season" to manually specify season number
 
 ### 3. **OCR Capture Process**
@@ -77,29 +68,17 @@ Pattern: 7 days active → 14 days break → repeat (21-day cycle)
 When F9 is pressed:
 
 1. **Screen Capture**: Grabs pixels from all 15 defined regions
-2. **Preprocessing**:
-   - Convert to grayscale
-   - Apply adaptive thresholding for better contrast
-   - Morphological operations to clean noise
-3. **Text Extraction**:
-   - EasyOCR reads Chinese and English characters
-   - Numbers extracted with allowlist (0-9, comma)
-   - Fallback to non-adaptive processing if initial attempt fails
-4. **Data Cleaning**:
-   - Remove special characters from nicknames
-   - Strip non-digits from scores
-   - Handle spurious leading '1' from flame icons
-5. **Validation**:
-   - Minimum nickname length check
-   - Duplicate detection (checks last 20 entries)
-6. **Storage**: Valid entries added to in-memory data table
+2. **Preprocessing**: Converts to grayscale, thresholding, and noise removal
+3. **Text Extraction**: EasyOCR processing in a background thread
+4. **Data Cleaning**: Regex-based cleaning for scores and nicknames
+5. **Storage**: Valid entries added to in-memory data table
 
 ### 4. **Data Management**
 
-- **Live Table**: Displays all captured data with formatting (commas in scores)
-- **Inline Editing**: Double-click cell → Edit → Press Enter to save and move to next
-- **Navigation**: Enter moves right/down, Esc cancels edit
-- **CSV Export**: Saves to `./results/GFL2_Season{N}_{timestamp}.csv`
+- **Live Table**: Displays all captured data with formatting
+- **Inline Editing**: Double-click cell to edit right in the table
+- **CSV Export**: Saves to `./results/` with optional Guild Rank prompt
+- **Upload**: Securely upload data to gunsmoke.app directly from the app
 
 ## 🛠️ Installation
 
@@ -107,7 +86,7 @@ When F9 is pressed:
 
 1. **Clone or download** this repository
 
-2. **Install Python 3.7+** from [python.org](https://python.org)
+2. **Install Python 3.9+** from [python.org](https://python.org)
 
 3. **Install dependencies**:
 ```bash
@@ -116,121 +95,64 @@ pip install -r requirements.txt
 
 4. **Run the app**:
 ```bash
-python gfl2_scanner.py
+python main.py
 ```
 
 ### For End Users
 
 1. **Download** the pre-built executable from releases
-2. **Run** `GFL2_Scanner.exe`
+2. **Run** `GunsmokeScanner.exe`
 3. **First time**: Configure regions in Setup tab
 4. **Start scanning**: Switch to Capture tab and press F9
 
 ## 📦 Building Executable
 
-To create a standalone `.exe` file:
+To create a standalone `.exe` file using the provided script:
 
 ```bash
-python -m PyInstaller gfl2_scanner.spec
+compile.bat
 ```
 
-The executable will be created in the `dist/` folder (~335 MB).
+The executable will be created in the `dist/GunsmokeScanner` folder.
 
-**Why is it large?**
-- PyTorch deep learning framework: ~150-200 MB
-- EasyOCR with language models: ~50-80 MB
-- OpenCV and scientific libraries: ~80-100 MB
-
-This is normal for AI-powered applications and allows the app to work offline without additional setup.
+**Note**: The build is configured in `onedir` mode to handle EasyOCR's large dependencies efficiently.
 
 ## 📖 Usage Guide
-
-### First Run
-
-1. **Welcome message** appears → Click OK
-2. Go to **Setup Regions** tab
-3. Enable **Show Overlay** checkbox in header
-4. Position overlays over your game leaderboard:
-   - Click an overlay to select it
-   - Drag with mouse or use arrow keys
-   - Or manually enter X, Y, Width, Height values
-5. Click **Save Config** when done
-6. Disable overlay (optional)
 
 ### Capturing Data
 
 1. Open GFL2 game to leaderboard screen
 2. Go to **Capture Data** tab
-3. Season should auto-display (e.g., "Season 17 (Nov 30 - Dec 06)")
-4. Press **F9** or click "📸 Capture"
-5. App scans all 5 rows and adds new players to table
-6. Repeat for each page of leaderboard
-7. Click **💾 Save to CSV** when finished
+3. Press **F9** or click "📸 Capture"
+4. App scans all 5 rows and adds new players to table
+5. Repeat for each page of leaderboard
+6. Click **💾 Save to CSV** when finished
+7. Enter **Guild Rank** if desired, or press Esc to skip
 
-### Editing Data
+### Uploading to Cloud
 
-- **Double-click** any cell to edit
-- **Enter** key: Save and move to next cell
-- **Esc** key: Cancel editing
-- **Delete row**: Not implemented (clear all and recapture if needed)
+1. Go to **Upload** tab
+2. Enter your gunsmoke.app credentials
+3. Click **Verify Login** to check permissions
+4. Click **Upload Last CSV** to send the most recent capture
 
 ## ⚙️ Configuration Files
 
 ### `config.json`
 
-Stores capture regions and settings:
-
-```json
-{
-  "screen_resolution": [1920, 1080],
-  "ocr_languages": ["ch_sim", "en"],
-  "preprocessing": {
-    "threshold": 140,
-    "adaptive": true,
-    "kernel_size": [2, 2]
-  },
-  "validation": {
-    "min_nickname_length": 2,
-    "min_total_score": 0,
-    "max_duplicate_check": 20
-  },
-  "rows": [
-    {
-      "nickname": [x, y, width, height],
-      "single_high": [x, y, width, height],
-      "total_score": [x, y, width, height]
-    }
-    // ... 5 rows total
-  ]
-}
-```
+Stores capture regions, OCR settings, and upload credentials (encrypted).
 
 ### CSV Output Format
 
 ```csv
-season,ign,topscore,totalscore
-17,PlayerName,3420,125000
-17,AnotherPlayer,6154,98500
+season,ign,topscore,totalscore,guildrank
+17,PlayerName,3420,125000,5
+17,AnotherPlayer,6154,98500,
 ```
-
-## 🎮 Season Reference
-
-| Season | Start Date | End Date | Status |
-|--------|------------|----------|--------|
-| 17 | Nov 30, 2025 | Dec 06, 2025 | Active |
-| 18 | Dec 21, 2025 | Dec 27, 2025 | Future |
-
-*Break periods: 14 days between each season*
 
 ## 🤝 Contributing
 
-Contributions welcome! Areas for improvement:
-
-- [ ] Support for different game resolutions/DPI scaling
-- [ ] Batch processing multiple screenshots
-- [ ] Database integration instead of CSV
-- [ ] Row deletion in data table
-- [ ] Statistics and analytics dashboard
+Contributions welcome!
 
 ## 📝 License
 
@@ -243,24 +165,16 @@ MIT License - feel free to modify and distribute.
 
 ## ⚠️ Troubleshooting
 
-**OCR not accurate?**
-- Adjust preprocessing threshold in config.json (try 120-160)
-- Ensure regions are precisely positioned over text
-- Check game UI scale settings
-
 **App crashes on startup?**
 - Delete config.json and restart (creates default)
-- Check Python version is 3.7+
-- Reinstall dependencies
+- Check Python version is 3.9+
+
+**OCR not accurate?**
+- Adjust preprocessing threshold in config.json
+- Ensure regions are precisely positioned over text
 
 **Executable won't run?**
-- Windows may block unsigned executables
-- Right-click → Properties → Unblock
-- Some antivirus software flags PyInstaller apps
-
-**Season wrong?**
-- Use "Set Season" to manually override
-- Verify your system date is correct
+- Windows may block unsigned executables -> Right-click -> Properties -> Unblock
 
 ---
 
