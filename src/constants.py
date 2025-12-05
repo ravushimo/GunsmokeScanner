@@ -28,3 +28,7 @@ DEFAULT_CONFIG = {
         "max_duplicate_check": 20
     }
 }
+
+# App Version
+APP_VERSION = "1.2.0"
+GITHUB_REPO = "ravushimo/GunsmokeScanner"
