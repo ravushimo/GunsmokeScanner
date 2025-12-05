@@ -4,7 +4,8 @@ import os
 from typing import List
 from src.data.models import PlayerScore
 
-def save_to_csv(data: List[PlayerScore], season: int) -> str:
+
+def save_to_csv(data: List[PlayerScore], season: int, guild_rank: str = None) -> str:
     """Save captured data to CSV"""
     if not data:
         return ""
@@ -14,6 +15,10 @@ def save_to_csv(data: List[PlayerScore], season: int) -> str:
     
     df = pd.DataFrame(dict_data)
     df = df.sort_values("totalscore", ascending=False)
+    
+    if guild_rank:
+        df['guildrank'] = ""
+        df.iloc[0, df.columns.get_loc('guildrank')] = guild_rank
     
     # Ensure results directory exists
     os.makedirs("./results", exist_ok=True)

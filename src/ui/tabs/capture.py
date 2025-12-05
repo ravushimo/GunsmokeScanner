@@ -193,12 +193,56 @@ class CaptureTab(tk.Frame):
     def save_data(self):
         if not self.captured_data:
             return
+
+        # Custom Dialog for Guild Rank
+        dialog = tk.Toplevel(self)
+        dialog.title("Save CSV - Optional Guild Rank")
+        dialog.geometry("400x180")
+        dialog.configure(bg=THEME['bg_dark'])
+        dialog.resizable(False, False)
         
-        # Convert dicts back to objects for storage module... or just update storage module to accept dicts?
-        # Storage module accepts PlayerScore objects.
-        # Let's convert back
+        # Center the dialog
+        dialog.transient(self)
+        dialog.grab_set()
+        x = self.winfo_rootx() + (self.winfo_width() // 2) - 200
+        y = self.winfo_rooty() + (self.winfo_height() // 2) - 90
+        dialog.geometry(f"+{x}+{y}")
+        
+        tk.Label(dialog, text="Add Guild Rank (Optional)", font=("Segoe UI", 12, "bold"),
+                bg=THEME['bg_dark'], fg=THEME['text_primary']).pack(pady=(15, 5))
+        
+        tk.Label(dialog, text="Enter rank to include it in the file:", font=("Segoe UI", 10),
+                bg=THEME['bg_dark'], fg=THEME['text_secondary']).pack(pady=(0, 10))
+        
+        entry = tk.Entry(dialog, font=("Consolas", 12), width=10, justify='center')
+        entry.pack(pady=5)
+        entry.focus_set()
+        
+        btn_frame = tk.Frame(dialog, bg=THEME['bg_dark'])
+        btn_frame.pack(pady=15)
+        
+        result_rank = [None]
+        
+        def on_update():
+            rank = entry.get().strip()
+            if rank:
+                result_rank[0] = rank
+            dialog.destroy()
+            
+        def on_skip():
+            dialog.destroy()
+            
+        create_button(btn_frame, "Update Rank (Enter)", on_update, THEME['accent_cyan']).pack(side=tk.LEFT, padx=5)
+        create_button(btn_frame, "No, Just Save (Esc)", on_skip, THEME['bg_light']).pack(side=tk.LEFT, padx=5)
+        
+        dialog.bind('<Return>', lambda e: on_update())
+        dialog.bind('<Escape>', lambda e: on_skip())
+        
+        self.wait_window(dialog)
+        
+        # Convert dicts back to objects for storage module
         models = [PlayerScore(**d) for d in self.captured_data]
-        filename = save_to_csv(models, self.season_num)
+        filename = save_to_csv(models, self.season_num, guild_rank=result_rank[0])
         messagebox.showinfo("Saved", f"Data saved to {filename}")
 
     # Inline editing
