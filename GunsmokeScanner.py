@@ -1320,6 +1320,12 @@ class GunsmokeScanner:
             
             result = response.json()
             
+            # Display rate limit info
+            if 'X-RateLimit-Limit' in response.headers:
+                remaining = response.headers.get('X-RateLimit-Remaining', '?')
+                limit = response.headers.get('X-RateLimit-Limit', '?')
+                self.log_upload_status(f"[INFO] Rate limit: {remaining}/{limit} requests remaining\n")
+            
             if response.status_code == 200 and result.get('success'):
                 data = result.get('data', {})
                 guild_name = data.get('guild_name', 'Unknown')
@@ -1338,6 +1344,23 @@ class GunsmokeScanner:
                 if self.save_creds_var.get():
                     self.save_upload_config()
                     self.log_upload_status("[INFO] Credentials saved (encrypted)\n")
+            elif response.status_code == 429:
+                # Rate limit exceeded
+                error_msg = result.get('message', 'Rate limit exceeded')
+                self.log_upload_status(f"[ERROR] ✗ {error_msg}\n")
+                
+                # Show when rate limit resets
+                reset_time = response.headers.get('X-RateLimit-Reset')
+                if reset_time:
+                    try:
+                        from datetime import datetime
+                        reset_dt = datetime.fromtimestamp(int(reset_time))
+                        self.log_upload_status(f"[INFO] Rate limit resets at: {reset_dt.strftime('%H:%M:%S')}\n")
+                        self.log_upload_status(f"[INFO] Please wait before trying again.\n")
+                    except:
+                        pass
+                
+                self.guild_info_label.config(text="✗ Rate limit exceeded", fg=THEME['danger'])
             else:
                 error_msg = result.get('message', 'Unknown error')
                 self.log_upload_status(f"[ERROR] ✗ Authentication failed: {error_msg}\n")
@@ -1431,6 +1454,12 @@ class GunsmokeScanner:
                 response = requests.post(upload_url, files=files, data=data, timeout=30)
                 result = response.json()
                 
+                # Display rate limit info
+                if 'X-RateLimit-Limit' in response.headers:
+                    remaining = response.headers.get('X-RateLimit-Remaining', '?')
+                    limit = response.headers.get('X-RateLimit-Limit', '?')
+                    self.log_upload_status(f"[INFO] Rate limit: {remaining}/{limit} uploads remaining this hour\n")
+                
                 if response.status_code == 200 and result.get('success'):
                     upload_data = result.get('data', {})
                     message = result.get('message', 'Upload successful')
@@ -1460,6 +1489,21 @@ class GunsmokeScanner:
                     if self.save_creds_var.get():
                         self.save_upload_config()
                         
+                elif response.status_code == 429:
+                    # Rate limit exceeded
+                    error_msg = result.get('message', 'Rate limit exceeded')
+                    self.log_upload_status(f"[ERROR] ✗ {error_msg}\n")
+                    
+                    # Show when rate limit resets
+                    reset_time = response.headers.get('X-RateLimit-Reset')
+                    if reset_time:
+                        try:
+                            from datetime import datetime
+                            reset_dt = datetime.fromtimestamp(int(reset_time))
+                            self.log_upload_status(f"[INFO] Rate limit resets at: {reset_dt.strftime('%H:%M:%S')}\n")
+                            self.log_upload_status(f"[INFO] You can upload again after this time.\n")
+                        except:
+                            pass
                 else:
                     error_msg = result.get('message', 'Unknown error')
                     self.log_upload_status(f"[ERROR] ✗ Upload failed: {error_msg}\n")
