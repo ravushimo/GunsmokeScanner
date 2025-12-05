@@ -201,28 +201,55 @@ class CaptureTab(tk.Frame):
         filename = save_to_csv(models, self.season_num)
         messagebox.showinfo("Saved", f"Data saved to {filename}")
 
-    # Inline editing (simplified for brevity)
+    # Inline editing
     def on_cell_double_click(self, event):
         item = self.tree.identify_row(event.y)
         column = self.tree.identify_column(event.x)
         if not item or not column: return
         
+        # Calculate cell coordinates
+        x, y, w, h = self.tree.bbox(item, column)
+        
+        # Prepare editing state
+        self.editing_item = item
         col_idx = int(column.replace('#', '')) - 1
-        col_name = ["season", "ign", "topscore", "totalscore"][col_idx]
+        self.editing_col = ["season", "ign", "topscore", "totalscore"][col_idx]
+        self.editing_row_idx = self.tree.index(item)
         
-        # Start edit... (Implementation omitted for brevity, but similar to original)
-        # For now, just a dialog
-        row_idx = self.tree.index(item)
-        current_val = self.captured_data[row_idx][col_name]
+        # Get current value
+        current_val = self.captured_data[self.editing_row_idx][self.editing_col]
         
-        new_val = simpledialog.askstring("Edit", f"Edit {col_name}:", initialvalue=str(current_val))
-        if new_val:
-            try:
-                if col_name in ['season', 'topscore', 'totalscore']:
-                    val = int(new_val.replace(',', ''))
-                else:
-                    val = new_val
-                self.captured_data[row_idx][col_name] = val
-                self.refresh_table()
-            except:
-                pass
+        # Create entry widget
+        self.edit_entry = tk.Entry(self.tree, width=10) # Width shouldn't matter as we place it
+        self.edit_entry.place(x=x, y=y, width=w, height=h)
+        self.edit_entry.insert(0, str(current_val))
+        self.edit_entry.select_range(0, tk.END)
+        self.edit_entry.focus()
+        
+        # Bind events
+        self.edit_entry.bind('<Return>', self.finish_edit)
+        self.edit_entry.bind('<FocusOut>', self.finish_edit)
+        self.edit_entry.bind('<Escape>', self.cancel_edit)
+
+    def finish_edit(self, event):
+        if not self.edit_entry: return
+        
+        new_val = self.edit_entry.get()
+        self.edit_entry.destroy()
+        self.edit_entry = None
+        
+        try:
+            if self.editing_col in ['season', 'topscore', 'totalscore']:
+                val = int(new_val.replace(',', ''))
+            else:
+                val = new_val
+            
+            self.captured_data[self.editing_row_idx][self.editing_col] = val
+            self.refresh_table()
+        except ValueError:
+            pass # Ignore invalid inputs
+            
+    def cancel_edit(self, event):
+        if self.edit_entry:
+            self.edit_entry.destroy()
+            self.edit_entry = None
