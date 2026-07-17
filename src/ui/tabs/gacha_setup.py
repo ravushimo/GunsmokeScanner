@@ -3,8 +3,10 @@ import tkinter as tk
 from tkinter import messagebox
 
 import customtkinter as ctk
+import pyautogui
 
 from src.constants import GACHA_EXTRA_REGIONS, GACHA_ROW_COLUMNS, THEME
+from src.core.layouts import layout_from_gacha_config, save_layout
 from src.core.scanner import safe_grab
 from src.ui.region_helpers import (
     FIELD_INDEX,
@@ -37,6 +39,7 @@ class GachaSetupTab(ctk.CTkFrame):
         fonts,
         ocr_processor=None,
         on_activate=None,
+        on_apply_layout=None,
     ):
         super().__init__(parent, fg_color=THEME["bg_canvas"], corner_radius=0)
         self.config_manager = config_manager
@@ -44,6 +47,7 @@ class GachaSetupTab(ctk.CTkFrame):
         self.fonts = fonts
         self.ocr_processor = ocr_processor
         self.on_activate = on_activate
+        self.on_apply_layout = on_apply_layout
 
         self.setup_ui()
 
@@ -332,6 +336,20 @@ class GachaSetupTab(ctk.CTkFrame):
             variant="primary",
             font=self.fonts.ui,
         ).pack(side=tk.LEFT, padx=5)
+        create_button(
+            btn_frame,
+            "Save as layout template",
+            self.save_layout_template,
+            variant="secondary",
+            font=self.fonts.ui,
+        ).pack(side=tk.LEFT, padx=5)
+        create_button(
+            btn_frame,
+            "Apply layout (F4)",
+            self.apply_layout_f4,
+            variant="ghost",
+            font=self.fonts.ui,
+        ).pack(side=tk.LEFT, padx=5)
 
         self._sync_kind_widgets()
         self.update_region_info()
@@ -516,3 +534,25 @@ class GachaSetupTab(ctk.CTkFrame):
             messagebox.showinfo("Success", "Gacha configuration saved!")
         else:
             messagebox.showerror("Error", "Failed to save configuration")
+
+    def save_layout_template(self):
+        """Export current gacha regions as a bundled layout for this screen size."""
+        width, height = pyautogui.size()
+        layout = layout_from_gacha_config(
+            self.config_manager.get_gacha(), width, height
+        )
+        try:
+            path = save_layout(layout)
+        except OSError as e:
+            messagebox.showerror("Error", f"Could not write layout:\n{e}")
+            return
+        messagebox.showinfo(
+            "Layout saved",
+            f"Saved gacha template for {width}x{height}:\n{path}",
+        )
+
+    def apply_layout_f4(self):
+        if self.on_apply_layout:
+            self.on_apply_layout()
+        else:
+            messagebox.showwarning("Layout", "Apply layout is not wired in this build.")

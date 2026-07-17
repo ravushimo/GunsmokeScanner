@@ -3,8 +3,10 @@ import tkinter as tk
 from tkinter import messagebox
 
 import customtkinter as ctk
+import pyautogui
 
 from src.constants import THEME
+from src.core.layouts import layout_from_gunsmoke_rows, save_layout
 from src.core.scanner import safe_grab
 from src.ui.region_helpers import (
     FIELD_INDEX,
@@ -17,13 +19,20 @@ from src.ui.styles import create_button
 
 class SetupTab(ctk.CTkFrame):
     def __init__(
-        self, parent, config_manager, overlay_manager, fonts, ocr_processor=None
+        self,
+        parent,
+        config_manager,
+        overlay_manager,
+        fonts,
+        ocr_processor=None,
+        on_apply_layout=None,
     ):
         super().__init__(parent, fg_color=THEME["bg_canvas"], corner_radius=0)
         self.config_manager = config_manager
         self.overlay_manager = overlay_manager
         self.fonts = fonts
         self.ocr_processor = ocr_processor
+        self.on_apply_layout = on_apply_layout
 
         self.overlay_manager.on_update_callback = self.on_overlay_update
 
@@ -277,6 +286,20 @@ class SetupTab(ctk.CTkFrame):
             variant="primary",
             font=self.fonts.ui,
         ).pack(side=tk.LEFT, padx=5)
+        create_button(
+            btn_frame,
+            "Save as layout template",
+            self.save_layout_template,
+            variant="secondary",
+            font=self.fonts.ui,
+        ).pack(side=tk.LEFT, padx=5)
+        create_button(
+            btn_frame,
+            "Apply layout (F4)",
+            self.apply_layout_f4,
+            variant="ghost",
+            font=self.fonts.ui,
+        ).pack(side=tk.LEFT, padx=5)
 
         self.update_region_info()
 
@@ -417,3 +440,23 @@ class SetupTab(ctk.CTkFrame):
             messagebox.showinfo("Success", "Configuration saved successfully!")
         else:
             messagebox.showerror("Error", "Failed to save configuration")
+
+    def save_layout_template(self):
+        width, height = pyautogui.size()
+        rows = self.config_manager.get("rows") or []
+        layout = layout_from_gunsmoke_rows(rows, width, height)
+        try:
+            path = save_layout(layout)
+        except OSError as e:
+            messagebox.showerror("Error", f"Could not write layout:\n{e}")
+            return
+        messagebox.showinfo(
+            "Layout saved",
+            f"Saved gunsmoke template for {width}x{height}:\n{path}",
+        )
+
+    def apply_layout_f4(self):
+        if self.on_apply_layout:
+            self.on_apply_layout()
+        else:
+            messagebox.showwarning("Layout", "Apply layout is not wired in this build.")

@@ -4,12 +4,20 @@ import tkinter as tk
 import webbrowser
 from pathlib import Path
 
+from tkinter import messagebox
+
 import customtkinter as ctk
 import keyboard
 from PIL import Image
+import pyautogui
 
 from src.config import ConfigManager
 from src.constants import APP_VERSION, GITHUB_URL, SITE_URL, THEME
+from src.core.layouts import (
+    apply_gacha_layout,
+    apply_gunsmoke_layout,
+    find_layout,
+)
 from src.core.ocr import OCRProcessor
 from src.core.season import SeasonManager
 from src.core.updater import UpdateChecker
@@ -84,6 +92,7 @@ class GunsmokeApp:
         try:
             keyboard.add_hotkey("f9", self._on_f9)
             keyboard.add_hotkey("f5", self._on_f5)
+            keyboard.add_hotkey("f4", self._on_f4)
         except Exception as e:
             print(f"Failed to register hotkey: {e}")
 
@@ -101,6 +110,45 @@ class GunsmokeApp:
         if self._mode != "gacha":
             return
         self.gacha_capture_tab.stop_scan()
+
+    def _on_f4(self):
+        """Apply bundled layout template for current screen size + mode."""
+        self.root.after(0, self.apply_layout_for_screen)
+
+    def apply_layout_for_screen(self):
+        width, height = pyautogui.size()
+        mode = self._mode if self._mode in ("gacha", "gunsmoke") else "gunsmoke"
+        layout, reason = find_layout(mode, width, height)
+        if not layout:
+            messagebox.showinfo(
+                "No layout template",
+                f"No {mode} layout for {width}x{height}.\n\n"
+                "Calibrate in Setup, then use “Save as layout template”,\n"
+                "or add a screenshot under .docs/templates for a new resolution.",
+            )
+            return
+
+        res = layout.get("resolution") or [width, height]
+        label = f"{int(res[0])}x{int(res[1])}"
+        if reason == "exact":
+            note = f"Exact match: {label}"
+        else:
+            note = f"Nearest template: {label} (screen is {width}x{height})"
+
+        if mode == "gacha":
+            apply_gacha_layout(self.config_manager.config, layout)
+        else:
+            apply_gunsmoke_layout(self.config_manager.config, layout)
+        self.config_manager.save_config()
+
+        if self.overlay_manager.active:
+            self.overlay_manager.sync_geometries()
+        if mode == "gacha" and hasattr(self, "gacha_setup_tab"):
+            self.gacha_setup_tab.update_region_info()
+        if mode == "gunsmoke" and hasattr(self, "setup_tab"):
+            self.setup_tab.update_region_info()
+
+        messagebox.showinfo("Layout applied", f"{note}\nOverlays refreshed if visible.")
 
     def check_updates(self):
         def _check():
@@ -287,6 +335,7 @@ class GunsmokeApp:
             self.overlay_manager,
             self.fonts,
             ocr_processor=self.ocr_processor,
+            on_apply_layout=self.apply_layout_for_screen,
         )
         self.setup_tab.pack(fill=tk.BOTH, expand=True)
 
@@ -312,6 +361,7 @@ class GunsmokeApp:
             self.overlay_manager,
             self.fonts,
             ocr_processor=self.ocr_processor,
+            on_apply_layout=self.apply_layout_for_screen,
         )
         self.gacha_setup_tab.pack(fill=tk.BOTH, expand=True)
 
