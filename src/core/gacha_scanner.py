@@ -91,8 +91,8 @@ def clean_timestamp(text: str) -> str:
     return f"{m2.group(1)} {m2.group(2)}" if m2 else ""
 
 
-def clean_item_name(text: str) -> str:
-    """Strip trailing ×1 quantity junk that EasyOCR often mangles."""
+def clean_item_name(text: str, item_type: Optional[str] = None) -> str:
+    """Strip trailing ×1 quantity junk and fuzzy-match known names for item_type."""
     if not text:
         return ""
     name = text.strip()
@@ -109,7 +109,10 @@ def clean_item_name(text: str) -> str:
         name = re.sub(r"[\s_\-.,;:|]+$", "", name)
         if name == prev:
             break
-    return re.sub(r"\s+", " ", name).strip()
+    name = re.sub(r"\s+", " ", name).strip()
+    from src.core.gacha_names import resolve_item_name
+
+    return resolve_item_name(name, item_type=item_type)
 
 
 def _source_key(text: str) -> str:
@@ -274,7 +277,7 @@ class GachaScanner:
             purchase_time = clean_timestamp(raw_time)
             purchase_source = clean_source(raw_source)
             item_type = clean_type(raw_type)
-            item_name = clean_item_name(raw_name)
+            item_name = clean_item_name(raw_name, item_type=item_type)
 
             if not purchase_time or not item_name:
                 continue

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from typing import Callable, Dict, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 
@@ -23,6 +23,7 @@ MODE_TABS: Dict[str, ModeTabs] = {
         ("capture", "Capture"),
         ("history", "History"),
         ("stats", "Stats"),
+        ("collection", "Collection"),
     ),
 }
 
@@ -31,7 +32,7 @@ MODE_IDS = ("gunsmoke", "gacha")
 
 
 class ModeNav(ctk.CTkFrame):
-    """Underline tabs for the active mode. Mode switch lives in the header."""
+    """Underline tabs that share the full window width evenly."""
 
     def __init__(
         self,
@@ -48,9 +49,22 @@ class ModeNav(ctk.CTkFrame):
         self._tab_id = "capture"
         self._buttons: Dict[str, ctk.CTkButton] = {}
         self._underlines: Dict[str, ctk.CTkFrame] = {}
+        self._cells: List[ctk.CTkFrame] = []
 
         self._row = ctk.CTkFrame(self, fg_color="transparent")
-        self._row.pack(side=tk.LEFT, padx=12, pady=0)
+        self._row.pack(fill=tk.BOTH, expand=True, padx=8, pady=0)
+        self.bind("<Configure>", self._on_resize)
+
+    def _on_resize(self, event):
+        if event.widget is not self or not self._cells:
+            return
+        for i, (tab_id, _label) in enumerate(MODE_TABS.get(self._mode, ())):
+            if i >= len(self._cells) or tab_id not in self._buttons:
+                continue
+            cw = self._cells[i].winfo_width()
+            if cw > 20:
+                self._buttons[tab_id].configure(width=max(60, cw - 8))
+
 
     def set_mode(self, mode: str, tab_id: Optional[str] = None) -> None:
         if mode not in MODE_TABS:
@@ -86,10 +100,18 @@ class ModeNav(ctk.CTkFrame):
             child.destroy()
         self._buttons.clear()
         self._underlines.clear()
+        self._cells.clear()
 
-        for tab_id, label in MODE_TABS[self._mode]:
+        tabs = list(MODE_TABS[self._mode])
+        for i in range(12):
+            self._row.grid_columnconfigure(i, weight=0, uniform="")
+
+        for i, (tab_id, label) in enumerate(tabs):
+            self._row.grid_columnconfigure(i, weight=1, uniform="modetabs")
+
             cell = ctk.CTkFrame(self._row, fg_color="transparent")
-            cell.pack(side=tk.LEFT, padx=(0, 4))
+            cell.grid(row=0, column=i, sticky="nsew", padx=2)
+            self._cells.append(cell)
 
             btn = ctk.CTkButton(
                 cell,
@@ -100,10 +122,11 @@ class ModeNav(ctk.CTkFrame):
                 text_color=THEME["text_muted"],
                 corner_radius=4,
                 height=28,
-                width=84,
+                # Let grid stretch the button; avoid fixed widths that overflow
+                anchor="center",
                 command=lambda t=tab_id: self.select_tab(t),
             )
-            btn.pack(side=tk.TOP, padx=2, pady=(6, 0))
+            btn.pack(side=tk.TOP, fill=tk.X, padx=2, pady=(6, 0))
 
             line = ctk.CTkFrame(
                 cell,
@@ -111,7 +134,7 @@ class ModeNav(ctk.CTkFrame):
                 height=2,
                 corner_radius=0,
             )
-            line.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(2, 0))
+            line.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(2, 0))
 
             self._buttons[tab_id] = btn
             self._underlines[tab_id] = line

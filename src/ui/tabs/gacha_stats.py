@@ -1,4 +1,4 @@
-"""Gacha Stats — campaigns, 50/50, and charts."""
+"""Gacha Stats — campaigns, 50/50, heatmap, banner filter."""
 
 from __future__ import annotations
 
@@ -8,10 +8,26 @@ from tkinter import ttk
 import customtkinter as ctk
 
 from src.constants import THEME
-from src.core.gacha_stats import ELITE_HARD_PITY, WORST_PULLS_V6, build_stats_report
+from src.core.gacha_stats import (
+    BANNER_LABELS,
+    ELITE_HARD_PITY,
+    WORST_PULLS_V6,
+    build_stats_report,
+)
 from src.data.gacha_db import GachaDB
-from src.ui.components.charts import ChartFrame
+from src.ui.components.charts import ActivityHeatmap, ChartFrame
 from src.ui.styles import create_button
+
+BANNER_FILTER_ORDER = (
+    ("All", None),
+    ("Premium Doll", "Targeted Procurement"),
+    ("Premium Weapon", "Military Upgrade"),
+    ("Custom Dolls", "Custom Procurement - Dolls"),
+    ("Custom Weapons", "Custom Procurement - Weapons"),
+    ("Standard", "Standard Procurement"),
+)
+
+_OUTCOME_GLYPH = {"win": "W", "loss": "L", "guaranteed": "G"}
 
 
 class GachaStatsTab(ctk.CTkFrame):
@@ -19,6 +35,7 @@ class GachaStatsTab(ctk.CTkFrame):
         super().__init__(parent, fg_color=THEME["bg_canvas"], corner_radius=0)
         self.fonts = fonts
         self.db = db or GachaDB()
+        self._banner_var = tk.StringVar(value="All")
         self.setup_ui()
         self.refresh()
 
@@ -37,14 +54,29 @@ class GachaStatsTab(ctk.CTkFrame):
 
         ctk.CTkLabel(
             row,
-            text="Campaigns: first-copy pity → last copy (V0→V6). "
-            "Standard-pool Elites = 50/50 losses on premium banners.",
+            text="Banner:",
+            font=self.fonts.ui,
+            text_color=THEME["text_muted"],
+            fg_color="transparent",
+        ).pack(side=tk.LEFT)
+
+        self.banner_menu = ctk.CTkOptionMenu(
+            row,
+            variable=self._banner_var,
+            values=[label for label, _ in BANNER_FILTER_ORDER],
+            width=160,
+            font=self.fonts.body,
+            command=lambda _v: self.refresh(),
+        )
+        self.banner_menu.pack(side=tk.LEFT, padx=(6, 16))
+
+        ctk.CTkLabel(
+            row,
+            text="Filter applies to the whole Stats page.",
             font=self.fonts.body,
             text_color=THEME["text_muted"],
             fg_color="transparent",
             anchor="w",
-            justify=tk.LEFT,
-            wraplength=640,
         ).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         create_button(
@@ -73,8 +105,39 @@ class GachaStatsTab(ctk.CTkFrame):
             fg_color="transparent",
             anchor="w",
             justify=tk.LEFT,
+            wraplength=680,
         )
         self.summary_lbl.pack(fill=tk.X, padx=2, pady=(0, 1))
+
+        ctk.CTkLabel(
+            self.scroll,
+            text="Pity (all banners)",
+            font=self.fonts.ui,
+            text_color=THEME["text_muted"],
+            fg_color="transparent",
+            anchor="w",
+        ).pack(fill=tk.X, padx=2, pady=(4, 0))
+
+        self.pity_lbl = ctk.CTkLabel(
+            self.scroll,
+            text="",
+            font=self.fonts.body_medium,
+            text_color=THEME["text_primary"],
+            fg_color="transparent",
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=680,
+        )
+        self.pity_lbl.pack(fill=tk.X, padx=2, pady=(0, 2))
+
+        ctk.CTkLabel(
+            self.scroll,
+            text="50/50 outcomes & sequence",
+            font=self.fonts.ui,
+            text_color=THEME["text_muted"],
+            fg_color="transparent",
+            anchor="w",
+        ).pack(fill=tk.X, padx=2, pady=(4, 0))
 
         self.fifty_lbl = ctk.CTkLabel(
             self.scroll,
@@ -84,8 +147,24 @@ class GachaStatsTab(ctk.CTkFrame):
             fg_color="transparent",
             anchor="w",
             justify=tk.LEFT,
+            wraplength=680,
         )
-        self.fifty_lbl.pack(fill=tk.X, padx=2, pady=(0, 4))
+        self.fifty_lbl.pack(fill=tk.X, padx=2, pady=(0, 2))
+
+        self.streak_lbl = ctk.CTkLabel(
+            self.scroll,
+            text="",
+            font=self.fonts.body,
+            text_color=THEME["text_muted"],
+            fg_color="transparent",
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=680,
+        )
+        self.streak_lbl.pack(fill=tk.X, padx=2, pady=(0, 4))
+
+        self.heatmap = ActivityHeatmap(self.scroll, fonts=self.fonts, height=130)
+        self.heatmap.pack(fill=tk.X, padx=2, pady=(0, 4))
 
         charts_row = ctk.CTkFrame(self.scroll, fg_color="transparent")
         charts_row.pack(fill=tk.X, padx=0, pady=0)
@@ -190,10 +269,29 @@ class GachaStatsTab(ctk.CTkFrame):
         self.tree.tag_configure("complete", foreground=THEME["success"])
         self.tree.tag_configure("progress", foreground=THEME["accent_amber"])
 
+    def _selected_source(self):
+        label = self._banner_var.get()
+        for name, source in BANNER_FILTER_ORDER:
+            if name == label:
+                return source
+        return None
+
+    @staticmethod
+    def _format_sequence(outcomes) -> str:
+        if not outcomes:
+            return "—"
+        # Cap display length for readability
+        glyphs = [_OUTCOME_GLYPH.get(o, "?") for o in outcomes]
+        if len(glyphs) > 48:
+            glyphs = glyphs[:24] + ["…"] + glyphs[-23:]
+        return " ".join(glyphs)
+
     def refresh(self):
         self.db.normalize_purchase_sources()
         timeline = self.db.list_all_oldest_first()
-        report = build_stats_report(timeline)
+        report = build_stats_report(
+            timeline, purchase_source=self._selected_source()
+        )
         summary = report["summary"]
         fifty = report["fifty_fifty"]
         charts = report["charts"]
@@ -203,13 +301,30 @@ class GachaStatsTab(ctk.CTkFrame):
             text=(
                 f"Total pulls {summary.get('total', 0)}  ·  "
                 f"Elite dolls {summary.get('elite_dolls', 0)}  ·  "
-                f"Elite weapons {summary.get('elite_weapons', 0)}  ·  "
-                f"Pity — Premium Doll {summary.get('pity_doll', 0)}/{hard}  ·  "
-                f"Premium Weapon {summary.get('pity_weapon', 0)}/{hard}"
+                f"Elite weapons {summary.get('elite_weapons', 0)}"
             )
         )
 
+        # When filtered to one banner, show that banner's pity; else all five
+        src = self._selected_source()
+        if src:
+            label = BANNER_LABELS.get(src, src)
+            by = summary.get("pity_by_source") or {}
+            cur = by.get(src, 0)
+            self.pity_lbl.configure(text=f"{label} {cur}/{hard}")
+        else:
+            self.pity_lbl.configure(
+                text=(
+                    f"Premium Doll {summary.get('pity_doll', 0)}/{hard}  ·  "
+                    f"Premium Weapon {summary.get('pity_weapon', 0)}/{hard}  ·  "
+                    f"Custom Dolls {summary.get('pity_custom_doll', 0)}/{hard}  ·  "
+                    f"Custom Weapons {summary.get('pity_custom_weapon', 0)}/{hard}  ·  "
+                    f"Standard {summary.get('pity_standard', 0)}/{hard}"
+                )
+            )
+
         parts = []
+        streak_parts = []
         for label, stats in (fifty.get("by_banner") or {}).items():
             wr = stats.get("win_rate")
             wr_txt = f"{wr}%" if wr is not None else "—"
@@ -217,11 +332,30 @@ class GachaStatsTab(ctk.CTkFrame):
                 f"{label}: {stats.get('wins', 0)}W / {stats.get('losses', 0)}L "
                 f"({wr_txt} of 50/50) · {stats.get('guaranteed', 0)} guaranteed"
             )
+            parts.append(f"  Sequence: {self._format_sequence(stats.get('sequence'))}")
+            streak_parts.append(
+                f"{label}: longest W {stats.get('longest_win_streak', 0)}  ·  "
+                f"longest L {stats.get('longest_loss_streak', 0)}  ·  "
+                f"current W {stats.get('current_win_streak', 0)} / "
+                f"L {stats.get('current_loss_streak', 0)}"
+            )
         g_doll = "YES" if fifty.get("guarantee_premium_doll") else "no"
         g_weap = "YES" if fifty.get("guarantee_premium_weapon") else "no"
-        parts.append(f"Next Elite guaranteed — Doll: {g_doll}  ·  Weapon: {g_weap}")
-        self.fifty_lbl.configure(text="\n".join(parts))
+        if parts:
+            parts.append(f"Next Elite guaranteed — Doll: {g_doll}  ·  Weapon: {g_weap}")
+            self.fifty_lbl.configure(text="\n".join(parts))
+            self.streak_lbl.configure(text="\n".join(streak_parts))
+        else:
+            src = self._selected_source()
+            if src == "Standard Procurement":
+                self.fifty_lbl.configure(
+                    text="Standard banner: pity only (no 50/50 win/loss tracking)."
+                )
+            else:
+                self.fifty_lbl.configure(text="No 50/50 outcomes in this filter.")
+            self.streak_lbl.configure(text="")
 
+        self.heatmap.set_data(report.get("activity_by_day"))
         self.chart_banner.set_data(charts.get("by_banner"))
         self.chart_rarity.set_data(charts.get("by_rarity"))
         luck = charts.get("worst_pulls_v6") or WORST_PULLS_V6

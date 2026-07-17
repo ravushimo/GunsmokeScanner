@@ -35,6 +35,8 @@ WEAPON_PITY_SOURCES = {
 STANDARD_SOURCE = "Standard Procurement"
 
 # Premium banners that run a featured vs standard 50/50.
+# Standard Procurement is pity-only: any Elite resets pity, but there is no
+# trackable win/loss (preferred unit is player-chosen in-game and not in OCR).
 FIFTY_FIFTY_SOURCES = {
     "Targeted Procurement",
     "Military Upgrade",
@@ -167,12 +169,13 @@ def annotate_pulls(pulls_oldest_first: List[Dict[str, Any]]) -> List[Dict[str, A
                         guarantee_weapon = False
                 pity_by_source[src] = 0
         elif src == STANDARD_SOURCE:
+            # Pity only — Elites here are random pool hits, not 50/50 outcomes.
             pity_by_source[src] += 1
             pity_val = pity_by_source[src]
             pity_kind = "standard"
             if is_any_elite(p):
                 pity_by_source[src] = 0
-
+            # intentionally leave fifty / elite_pool unset
         p["pity"] = pity_val
         p["pity_kind"] = pity_kind
         p["elite_pool"] = pool
@@ -400,17 +403,54 @@ def compute_campaigns(annotated_oldest_first: List[Dict[str, Any]]) -> List[Dict
     return campaigns
 
 
+def _streak_stats(outcomes: List[str], kind: str) -> Dict[str, int]:
+    """Longest and current streak for win or loss (guaranteed breaks streaks)."""
+    longest = 0
+    cur = 0
+    for o in outcomes:
+        if o == kind:
+            cur += 1
+            longest = max(longest, cur)
+        else:
+            cur = 0
+    # Current streak from the end (newest)
+    current = 0
+    for o in reversed(outcomes):
+        if o == kind:
+            current += 1
+        elif o == "guaranteed":
+            break
+        else:
+            break
+    return {"longest": longest, "current": current}
+
+
 def compute_fifty_fifty_summary(
     annotated_oldest_first: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    by_banner: Dict[str, Dict[str, int]] = {}
+    by_banner: Dict[str, Dict[str, Any]] = {}
+    sequences: Dict[str, List[Dict[str, Any]]] = {}
+
     for src in FIFTY_FIFTY_SOURCES:
         label = banner_label(src)
         wins = losses = guaranteed = 0
+        seq: List[Dict[str, Any]] = []
+        outcomes: List[str] = []
         for p in annotated_oldest_first:
             if normalize_source(p.get("purchase_source")) != src:
                 continue
             ff = p.get("fifty_fifty")
+            if not ff:
+                continue
+            outcomes.append(ff)
+            seq.append(
+                {
+                    "outcome": ff,
+                    "name": p.get("item_name") or "",
+                    "time": p.get("purchase_time") or "",
+                    "pity": p.get("pity"),
+                }
+            )
             if ff == "win":
                 wins += 1
             elif ff == "loss":
@@ -418,16 +458,22 @@ def compute_fifty_fifty_summary(
             elif ff == "guaranteed":
                 guaranteed += 1
         decided = wins + losses
+        win_streaks = _streak_stats(outcomes, "win")
+        loss_streaks = _streak_stats(outcomes, "loss")
         by_banner[label] = {
             "wins": wins,
             "losses": losses,
             "guaranteed": guaranteed,
             "decided": decided,
             "win_rate": round(100.0 * wins / decided, 1) if decided else None,
+            "longest_win_streak": win_streaks["longest"],
+            "longest_loss_streak": loss_streaks["longest"],
+            "current_win_streak": win_streaks["current"],
+            "current_loss_streak": loss_streaks["current"],
+            "sequence": [s["outcome"] for s in seq],
         }
+        sequences[label] = seq
 
-    # Guarantee status from newest pull backward is already in last state —
-    # recompute quickly from full walk
     g_doll = False
     g_weap = False
     for p in annotated_oldest_first:
@@ -439,26 +485,98 @@ def compute_fifty_fifty_summary(
 
     return {
         "by_banner": by_banner,
+        "sequences": sequences,
         "guarantee_premium_doll": g_doll,
         "guarantee_premium_weapon": g_weap,
     }
 
 
+def compute_activity_by_day(
+    annotated_oldest_first: List[Dict[str, Any]],
+) -> Dict[str, int]:
+    """Map YYYY-MM-DD → pull count."""
+    counts: Counter = Counter()
+    for p in annotated_oldest_first:
+        t = (p.get("purchase_time") or "")[:10]
+        if len(t) == 10:
+            counts[t] += 1
+    return dict(counts)
+
+
+def build_collection(
+    annotated_oldest_first: List[Dict[str, Any]],
+    overrides: Optional[Dict[Tuple[str, str], int]] = None,
+) -> List[Dict[str, Any]]:
+    """Elite copy counts per unit, with optional manual overrides (1–7 copies)."""
+    overrides = overrides or {}
+    scanned: Dict[Tuple[str, str], int] = Counter()
+    for p in annotated_oldest_first:
+        if p.get("rarity") != "elite":
+            continue
+        name = (p.get("item_name") or "").strip()
+        itype = p.get("item_type") or ""
+        if not name or itype not in ("Doll", "Weapons"):
+            continue
+        scanned[(name, itype)] += 1
+
+    keys = set(scanned) | set(overrides)
+    rows: List[Dict[str, Any]] = []
+    for name, itype in keys:
+        raw = int(scanned.get((name, itype), 0))
+        ov = overrides.get((name, itype))
+        copies = int(ov) if ov is not None else min(raw, MAX_COPIES)
+        if ov is not None:
+            copies = max(0, min(MAX_COPIES, int(ov)))
+        elif raw > 0:
+            copies = min(raw, MAX_COPIES)
+        else:
+            continue
+        if copies <= 0 and ov is None:
+            continue
+        rows.append(
+            {
+                "name": name,
+                "item_type": itype,
+                "scanned_copies": raw,
+                "copies": copies,
+                "potential": f"V{copies - 1}" if copies > 0 else "—",
+                "override": ov is not None,
+            }
+        )
+    rows.sort(key=lambda r: (0 if r["item_type"] == "Doll" else 1, r["name"].lower()))
+    return rows
+
+
 def build_stats_report(
     pulls_oldest_first: List[Dict[str, Any]],
+    *,
+    purchase_source: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Full stats payload for the Gacha Stats tab."""
-    annotated = annotate_pulls(list(pulls_oldest_first))
+    """Full stats payload for the Gacha Stats tab.
+
+    Pity annotation always uses the full timeline; display metrics can be
+    limited to one Purchase Source via purchase_source.
+    """
+    annotated_full = annotate_pulls(list(pulls_oldest_first))
+    annotated = annotated_full
+    if purchase_source:
+        want = normalize_source(purchase_source)
+        annotated = [
+            p
+            for p in annotated_full
+            if normalize_source(p.get("purchase_source")) == want
+        ]
+
     summary = compute_summary(annotated)
     campaigns = compute_campaigns(annotated)
     fifty = compute_fifty_fifty_summary(annotated)
+    activity = compute_activity_by_day(annotated)
 
     rarity = {
         "Elite": summary["elite_dolls"] + summary["elite_weapons"],
         "Standard": summary["standard"],
         "Retired": summary["retired"],
     }
-    # Elite split for chart clarity
     elite_split = {
         "Elite Dolls": summary["elite_dolls"],
         "Elite Weapons": summary["elite_weapons"],
@@ -484,6 +602,7 @@ def build_stats_report(
         "summary": summary,
         "campaigns": campaigns,
         "fifty_fifty": fifty,
+        "activity_by_day": activity,
         "charts": {
             "by_banner": dict(summary.get("banners") or {}),
             "by_rarity": rarity,

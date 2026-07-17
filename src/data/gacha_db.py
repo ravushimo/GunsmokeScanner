@@ -53,6 +53,16 @@ class GachaDB:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_pulls_source ON pulls(purchase_source)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS collection_overrides (
+                    item_name TEXT NOT NULL,
+                    item_type TEXT NOT NULL,
+                    copies INTEGER NOT NULL,
+                    PRIMARY KEY (item_name, item_type)
+                )
+                """
+            )
 
     def insert_pull(
         self,
@@ -247,3 +257,160 @@ class GachaDB:
                 )
                 updated += cur.rowcount
         return updated
+
+    def distinct_item_names(self) -> List[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT item_name FROM pulls ORDER BY item_name"
+            ).fetchall()
+        return [r[0] for r in rows if r[0]]
+
+    def distinct_item_name_types(self) -> List[Tuple[str, str]]:
+        """Distinct (item_name, item_type) pairs for type-aware OCR repair."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT item_name, item_type
+                FROM pulls
+                ORDER BY item_type, item_name
+                """
+            ).fetchall()
+        return [(r[0], r[1] or "") for r in rows if r[0]]
+
+    def rename_item_name(
+        self,
+        old_name: str,
+        new_name: str,
+        item_type: Optional[str] = None,
+    ) -> int:
+        """Rename pulls with old_name → new_name.
+
+        When item_type is set, only rows of that type are updated (required when
+        dolls and weapons share a stem).
+        """
+        if not old_name or not new_name or old_name == new_name:
+            return 0
+        with self._connect() as conn:
+            if item_type:
+                conflict_sql = """
+                    SELECT p.id, p.purchase_time, p.ordinal
+                    FROM pulls p
+                    WHERE p.item_name = ? AND p.item_type = ?
+                      AND EXISTS (
+                        SELECT 1 FROM pulls q
+                        WHERE q.purchase_time = p.purchase_time
+                          AND q.item_name = ?
+                          AND q.ordinal = p.ordinal
+                          AND q.id != p.id
+                      )
+                """
+                conflict_params = (old_name, item_type, new_name)
+            else:
+                conflict_sql = """
+                    SELECT p.id, p.purchase_time, p.ordinal
+                    FROM pulls p
+                    WHERE p.item_name = ?
+                      AND EXISTS (
+                        SELECT 1 FROM pulls q
+                        WHERE q.purchase_time = p.purchase_time
+                          AND q.item_name = ?
+                          AND q.ordinal = p.ordinal
+                          AND q.id != p.id
+                      )
+                """
+                conflict_params = (old_name, new_name)
+
+            conflicts = conn.execute(conflict_sql, conflict_params).fetchall()
+            for row_id, purchase_time, ordinal in conflicts:
+                new_ord = int(ordinal)
+                while True:
+                    new_ord += 1
+                    exists = conn.execute(
+                        """
+                        SELECT 1 FROM pulls
+                        WHERE purchase_time = ? AND item_name = ? AND ordinal = ?
+                        LIMIT 1
+                        """,
+                        (purchase_time, new_name, new_ord),
+                    ).fetchone()
+                    if not exists:
+                        break
+                conn.execute(
+                    "UPDATE pulls SET ordinal = ? WHERE id = ?",
+                    (new_ord, row_id),
+                )
+
+            if item_type:
+                cur = conn.execute(
+                    "UPDATE pulls SET item_name = ? WHERE item_name = ? AND item_type = ?",
+                    (new_name, old_name, item_type),
+                )
+                conn.execute(
+                    """
+                    UPDATE OR IGNORE collection_overrides
+                    SET item_name = ? WHERE item_name = ? AND item_type = ?
+                    """,
+                    (new_name, old_name, item_type),
+                )
+                conn.execute(
+                    "DELETE FROM collection_overrides WHERE item_name = ? AND item_type = ?",
+                    (old_name, item_type),
+                )
+            else:
+                cur = conn.execute(
+                    "UPDATE pulls SET item_name = ? WHERE item_name = ?",
+                    (new_name, old_name),
+                )
+                conn.execute(
+                    """
+                    UPDATE OR IGNORE collection_overrides
+                    SET item_name = ? WHERE item_name = ?
+                    """,
+                    (new_name, old_name),
+                )
+                conn.execute(
+                    "DELETE FROM collection_overrides WHERE item_name = ?",
+                    (old_name,),
+                )
+            return int(cur.rowcount)
+
+    def apply_name_fixes(self, pairs: List[Tuple[str, str, str]]) -> int:
+        """Apply (old, new, item_type) renames. Returns total rows updated."""
+        total = 0
+        for old, new, item_type in pairs:
+            total += self.rename_item_name(old, new, item_type=item_type or None)
+        return total
+
+    def get_collection_overrides(self) -> Dict[Tuple[str, str], int]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT item_name, item_type, copies FROM collection_overrides"
+            ).fetchall()
+        return {(r[0], r[1]): int(r[2]) for r in rows}
+
+    def set_collection_override(
+        self, item_name: str, item_type: str, copies: int
+    ) -> None:
+        copies = max(0, min(7, int(copies)))
+        with self._connect() as conn:
+            if copies <= 0:
+                conn.execute(
+                    "DELETE FROM collection_overrides WHERE item_name = ? AND item_type = ?",
+                    (item_name, item_type),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO collection_overrides (item_name, item_type, copies)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(item_name, item_type) DO UPDATE SET copies = excluded.copies
+                    """,
+                    (item_name, item_type, copies),
+                )
+
+    def clear_collection_override(self, item_name: str, item_type: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM collection_overrides WHERE item_name = ? AND item_type = ?",
+                (item_name, item_type),
+            )

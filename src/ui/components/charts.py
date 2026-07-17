@@ -326,3 +326,146 @@ class ChartFrame(ctk.CTkFrame):
                 fill=base,
                 font=("Segoe UI", 9, "bold"),
             )
+
+
+def _heat_color(count: int, peak: int) -> str:
+    if count <= 0 or peak <= 0:
+        return THEME["bg_raised"]
+    t = min(1.0, count / peak)
+    # muted → amber → CTA orange
+    cold = (55, 58, 52)
+    mid = (247, 165, 1)
+    hot = (245, 78, 0)
+    if t < 0.5:
+        u = t / 0.5
+        rgb = tuple(_lerp(cold[i], mid[i], u) for i in range(3))
+    else:
+        u = (t - 0.5) / 0.5
+        rgb = tuple(_lerp(mid[i], hot[i], u) for i in range(3))
+    return _rgb_to_hex(rgb)
+
+
+class ActivityHeatmap(ctk.CTkFrame):
+    """GitHub-style calendar heatmap of pulls per day."""
+
+    def __init__(self, parent, fonts=None, height: int = 140):
+        super().__init__(
+            parent,
+            fg_color=THEME["bg_surface"],
+            corner_radius=6,
+            border_width=1,
+            border_color=THEME["border"],
+        )
+        self.fonts = fonts
+        title = ctk.CTkLabel(
+            self,
+            text="Pull activity",
+            font=fonts.ui if fonts else ("Segoe UI", 12),
+            text_color=THEME["text_strong"],
+            fg_color="transparent",
+            anchor="w",
+        )
+        title.pack(fill=tk.X, padx=10, pady=(8, 0))
+        self._meta = ctk.CTkLabel(
+            self,
+            text="",
+            font=fonts.body if fonts else ("Segoe UI", 11),
+            text_color=THEME["text_muted"],
+            fg_color="transparent",
+            anchor="w",
+        )
+        self._meta.pack(fill=tk.X, padx=10, pady=(0, 2))
+        self.canvas = tk.Canvas(
+            self,
+            height=height,
+            bg=THEME["bg_surface"],
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self.canvas.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        self.canvas.bind("<Configure>", lambda _e: self._redraw())
+        self._counts: Dict[str, int] = {}
+
+    def set_data(self, activity_by_day: Optional[Dict[str, int]]) -> None:
+        self._counts = dict(activity_by_day or {})
+        total = sum(self._counts.values())
+        days = len(self._counts)
+        peak = max(self._counts.values()) if self._counts else 0
+        self._meta.configure(
+            text=f"{total} pulls across {days} days  ·  peak {peak}/day"
+            if days
+            else "No dated pulls"
+        )
+        self._redraw()
+
+    def _redraw(self) -> None:
+        c = self.canvas
+        c.delete("all")
+        w = max(c.winfo_width(), 200)
+        h = max(c.winfo_height(), 80)
+        if not self._counts:
+            c.create_text(
+                w // 2,
+                h // 2,
+                text="—",
+                fill=THEME["text_muted"],
+                font=("Segoe UI", 12),
+            )
+            return
+
+        from datetime import date, datetime, timedelta
+
+        days_sorted = sorted(self._counts)
+        try:
+            start = datetime.strptime(days_sorted[0], "%Y-%m-%d").date()
+            end = datetime.strptime(days_sorted[-1], "%Y-%m-%d").date()
+        except ValueError:
+            return
+
+        # Align start to Monday
+        start = start - timedelta(days=start.weekday())
+        end = end + timedelta(days=(6 - end.weekday()))
+        peak = max(self._counts.values()) or 1
+
+        cell = 11
+        gap = 2
+        pad_l = 28
+        pad_t = 4
+        weeks = ((end - start).days // 7) + 1
+        # Shrink if too wide
+        avail = w - pad_l - 8
+        need = weeks * (cell + gap)
+        if need > avail and weeks > 0:
+            cell = max(6, int((avail / weeks) - gap))
+
+        weekday_labels = ("Mon", "", "Wed", "", "Fri", "", "")
+        for i, lab in enumerate(weekday_labels):
+            if lab:
+                c.create_text(
+                    4,
+                    pad_t + i * (cell + gap) + cell / 2,
+                    text=lab,
+                    anchor="w",
+                    fill=THEME["text_muted"],
+                    font=("Segoe UI", 7),
+                )
+
+        d = start
+        while d <= end:
+            week = (d - start).days // 7
+            wd = d.weekday()
+            key = d.isoformat()
+            count = self._counts.get(key, 0)
+            x0 = pad_l + week * (cell + gap)
+            y0 = pad_t + wd * (cell + gap)
+            color = _heat_color(count, peak)
+            c.create_rectangle(
+                x0,
+                y0,
+                x0 + cell,
+                y0 + cell,
+                fill=color,
+                outline=THEME["bg_canvas"],
+                width=1,
+            )
+            d += timedelta(days=1)

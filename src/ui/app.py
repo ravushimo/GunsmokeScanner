@@ -28,6 +28,7 @@ from src.ui.fonts import load_fonts
 from src.ui.styles import apply_ctk_theme, attach_hover_flash, setup_ttk_styles
 from src.ui.tabs.capture import CaptureTab
 from src.ui.tabs.gacha_capture import GachaCaptureTab
+from src.ui.tabs.gacha_collection import GachaCollectionTab
 from src.ui.tabs.gacha_history import GachaHistoryTab
 from src.ui.tabs.gacha_setup import GachaSetupTab
 from src.ui.tabs.gacha_stats import GachaStatsTab
@@ -59,7 +60,8 @@ class GunsmokeApp:
         self.root.title(
             f"Gunsmoke Scanner v{APP_VERSION} - Leaderboard Scanner for gunsmoke.app"
         )
-        self.root.geometry("860x1000")
+        self.root.geometry("720x960")
+        self.root.minsize(640, 720)
         self.root.configure(fg_color=THEME["bg_canvas"])
 
         icon_ico = _asset_path("icon.ico")
@@ -369,6 +371,10 @@ class GunsmokeApp:
             page("gacha.history"),
             self.fonts,
             db=self.gacha_db,
+            on_change=lambda: (
+                self.gacha_stats_tab.refresh(),
+                self.gacha_collection_tab.refresh(),
+            ),
         )
         self.gacha_history_tab.pack(fill=tk.BOTH, expand=True)
 
@@ -379,9 +385,18 @@ class GunsmokeApp:
         )
         self.gacha_stats_tab.pack(fill=tk.BOTH, expand=True)
 
+        self.gacha_collection_tab = GachaCollectionTab(
+            page("gacha.collection"),
+            self.fonts,
+            db=self.gacha_db,
+            on_change=lambda: self.gacha_stats_tab.refresh(),
+        )
+        self.gacha_collection_tab.pack(fill=tk.BOTH, expand=True)
+
         def _refresh_gacha_views():
             self.gacha_history_tab.refresh()
             self.gacha_stats_tab.refresh()
+            self.gacha_collection_tab.refresh()
 
         self.gacha_capture_tab = GachaCaptureTab(
             page("gacha.capture"),
@@ -420,6 +435,8 @@ class GunsmokeApp:
             self.overlay_var.set(False)
         if mode == "gacha" and tab_id == "stats":
             self.gacha_stats_tab.refresh()
+        if mode == "gacha" and tab_id == "collection":
+            self.gacha_collection_tab.refresh()
 
     def _show_page(self, mode: str, tab_id: str):
         key = f"{mode}.{tab_id}"
