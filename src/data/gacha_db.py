@@ -87,18 +87,40 @@ class GachaDB:
             )
             return cur.rowcount > 0
 
-    def insert_pulls(self, pulls: Iterable[Dict[str, Any]]) -> Tuple[int, int]:
-        """Bulk insert. Returns (inserted, updated_or_skipped).
+    def pull_exists(
+        self,
+        purchase_time: str,
+        item_name: str,
+        ordinal: int,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> bool:
+        sql = """
+            SELECT 1 FROM pulls
+            WHERE purchase_time = ? AND item_name = ? AND ordinal = ?
+            LIMIT 1
+        """
+        params = (purchase_time, item_name, ordinal)
+        if conn is not None:
+            return conn.execute(sql, params).fetchone() is not None
+        with self._connect() as c:
+            return c.execute(sql, params).fetchone() is not None
 
-        On duplicate (time, name, ordinal), refresh source/type/rarity so a
-        re-scan can fix cleaned fields without creating a second row.
+    def insert_pulls(self, pulls: Iterable[Dict[str, Any]]) -> Tuple[int, int]:
+        """Bulk insert. Returns (inserted_new, already_known).
+
+        Existing rows (same time, name, ordinal) are updated in place and
+        counted as already_known so the scanner can stop when catching up.
         """
         inserted = 0
-        skipped = 0
+        known = 0
         scanned_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self._connect() as conn:
             for p in pulls:
-                cur = conn.execute(
+                time_s = p["purchase_time"]
+                name = p["item_name"]
+                ordinal = int(p.get("ordinal", 0))
+                existed = self.pull_exists(time_s, name, ordinal, conn=conn)
+                conn.execute(
                     """
                     INSERT INTO pulls (
                         purchase_time, purchase_source, item_type, item_name,
@@ -111,21 +133,20 @@ class GachaDB:
                         scanned_at = excluded.scanned_at
                     """,
                     (
-                        p["purchase_time"],
+                        time_s,
                         p["purchase_source"],
                         p["item_type"],
-                        p["item_name"],
-                        p.get("ordinal", 0),
+                        name,
+                        ordinal,
                         p.get("rarity_color"),
                         p.get("scanned_at", scanned_at),
                     ),
                 )
-                # rowcount is 1 for insert; SQLite may report 1 for update too
-                if cur.rowcount > 0:
-                    inserted += 1
+                if existed:
+                    known += 1
                 else:
-                    skipped += 1
-        return inserted, skipped
+                    inserted += 1
+        return inserted, known
 
     def list_pulls(
         self,

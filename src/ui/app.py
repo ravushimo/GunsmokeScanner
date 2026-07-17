@@ -54,7 +54,13 @@ class GunsmokeApp:
         self.root.geometry("860x1000")
         self.root.configure(fg_color=THEME["bg_canvas"])
 
+        icon_ico = _asset_path("icon.ico")
         logo_path = _asset_path("logo.png")
+        if icon_ico.is_file():
+            try:
+                self.root.iconbitmap(default=str(icon_ico))
+            except Exception:
+                pass
         if logo_path.is_file():
             try:
                 self.root.iconphoto(True, tk.PhotoImage(file=str(logo_path)))

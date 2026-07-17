@@ -304,9 +304,11 @@ class GachaScanner:
         max_pages: int = 500,
     ) -> Dict:
         """
-        Reset to page 1, scan each page, click Next until stuck/empty.
+        Reset to page 1, scan each page (newest → oldest), click Next until
+        stuck/empty, or until a full page of pulls is already in the DB
+        (incremental catch-up after the first full history scan).
 
-        Returns summary dict with inserted/skipped/pages/pulls.
+        Returns summary dict with inserted/skipped/pages/pulls/caught_up.
         """
         self._stop = False
         click_delay, settle = self._delays()
@@ -314,6 +316,7 @@ class GachaScanner:
         session_pulls: List[Dict] = []
         inserted_total = 0
         skipped_total = 0
+        caught_up = False
 
         self._status(status_cb, "Resetting to page 1…")
         self.go_to_page_one(status_cb=status_cb)
@@ -338,9 +341,9 @@ class GachaScanner:
                 self._status(status_cb, "Empty page — finished.")
                 break
 
-            ins, skip = self.db.insert_pulls(page_pulls)
+            ins, known = self.db.insert_pulls(page_pulls)
             inserted_total += ins
-            skipped_total += skip
+            skipped_total += known
             for p in page_pulls:
                 session_pulls.append(p)
                 if on_pull:
@@ -348,6 +351,19 @@ class GachaScanner:
 
             pages_scanned += 1
             prev_page = page
+
+            # Records are newest→oldest. A 10-pull often spans pages, e.g.
+            # page 1: 6 new, page 2: 4 new + 2 already known. Once we see any
+            # known pull on a page (after saving that page's new ones), every
+            # older page is already in the DB — stop without walking history.
+            if known > 0:
+                caught_up = True
+                self._status(
+                    status_cb,
+                    f"Caught up — hit {known} known pull(s) on this page. "
+                    f"New this run: {inserted_total}.",
+                )
+                break
 
             if self._stop:
                 break
@@ -364,13 +380,17 @@ class GachaScanner:
                 self._status(status_cb, "Page did not advance — finished.")
                 break
 
-        self._status(
-            status_cb,
-            f"Done. Pages {pages_scanned}, saved {inserted_total}, skipped {skipped_total}.",
-        )
+        if not caught_up and not self._stop:
+            self._status(
+                status_cb,
+                f"Done. Pages {pages_scanned}, "
+                f"saved {inserted_total}, known {skipped_total}.",
+            )
         return {
             "pages": pages_scanned,
             "inserted": inserted_total,
             "skipped": skipped_total,
+            "caught_up": caught_up,
+            "stopped": self._stop,
             "pulls": session_pulls,
         }

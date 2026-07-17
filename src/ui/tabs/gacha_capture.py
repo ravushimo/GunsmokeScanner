@@ -97,9 +97,9 @@ class GachaCaptureTab(ctk.CTkFrame):
         ctk.CTkLabel(
             ctrl_frame,
             text=(
-                "Open Access Records on page 1 (or any page — scanner resets to 1). "
-                "F9 starts scan on this tab · F5 stops (gacha mode). "
-                "Lower delays = faster page turns (too low may skip pages)."
+                "Open Access Records (any filter/banner). Scanner resets to page 1, "
+                "walks newest→oldest, and stops once it hits pulls already in history "
+                "(mixed pages from 10-pulls are fine). F9 start · F5 stop."
             ),
             font=self.fonts.caption,
             text_color=THEME["text_muted"],
@@ -286,12 +286,29 @@ class GachaCaptureTab(ctk.CTkFrame):
     def _on_scan_complete(self, summary: dict):
         self.is_scanning = False
         self._refresh_stats()
-        self.status_label.configure(
-            text=(
-                f"Done. Pages {summary['pages']}, "
-                f"saved {summary['inserted']}, skipped {summary['skipped']}."
+        if summary.get("caught_up"):
+            msg = (
+                f"Caught up. Pages {summary['pages']}, "
+                f"new {summary['inserted']}, already known {summary['skipped']}."
             )
-        )
+        elif summary.get("stopped"):
+            msg = (
+                f"Stopped. Pages {summary['pages']}, "
+                f"new {summary['inserted']}, known {summary['skipped']}."
+            )
+        else:
+            msg = (
+                f"Done. Pages {summary['pages']}, "
+                f"new {summary['inserted']}, known {summary['skipped']}."
+            )
+        self.status_label.configure(text=msg)
+        if not summary.get("stopped"):
+            try:
+                from src.core.notify import play_scan_complete_sound
+
+                play_scan_complete_sound()
+            except Exception:
+                pass
         if self.on_history_refresh:
             self.on_history_refresh()
 
