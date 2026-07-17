@@ -3,7 +3,8 @@ echo Activate virtual environment...
 call .venv\Scripts\activate
 
 echo Building Gunsmoke Scanner...
-pyinstaller --noconfirm --onedir --windowed --name "GunsmokeScanner" --add-data "src;src" main.py
+cd /d "%~dp0"
+.venv\Scripts\python.exe -m PyInstaller --noconfirm --onedir --windowed --name "GunsmokeScanner" --add-data "src;src" --add-data "assets;assets" main.py
 
 echo Copying EasyOCR models...
 xcopy /E /I /Y "easyocr_models" "dist\GunsmokeScanner\easyocr_models"

@@ -5,6 +5,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+
 def get_encryption_key() -> bytes:
     """Generate encryption key from machine-specific identifier"""
     # Use a combination of machine-specific identifiers
@@ -12,11 +13,12 @@ def get_encryption_key() -> bytes:
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=b'gunsmoke_scanner_salt',  # Static salt (acceptable for machine-specific encryption)
+        salt=b"gunsmoke_scanner_salt",  # Static salt (acceptable for machine-specific encryption)
         iterations=100000,
     )
     key = base64.urlsafe_b64encode(kdf.derive(machine_id.encode()))
     return key
+
 
 def encrypt_password(password: str) -> str:
     """Encrypt password for storage"""
@@ -29,6 +31,7 @@ def encrypt_password(password: str) -> str:
     except Exception as e:
         print(f"Encryption error: {e}")
         return ""
+
 
 def decrypt_password(encrypted_password: str) -> str:
     """Decrypt password from storage"""

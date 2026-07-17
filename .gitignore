@@ -1,27 +1,69 @@
-# Build artifacts
+# --- Build / packaging ---
 build/
 dist/
 *.spec
-# Python cache
+*.egg-info/
+.eggs/
+
+# --- Python ---
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-# Virtual environment
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Virtual environments ---
 venv/
 env/
 ENV/
+.venv/
 .venv
-# User-specific
+
+# --- Local secrets & runtime data (do not commit) ---
+# Hashed upload password and calibrated regions live here
 config.json
+*.local.json
+.env
+.env.*
+# SQLite Access Records / any local DB dumps (repo root only — not src/data/)
+/data/
+*.db
+*.sqlite
+*.sqlite3
+# Scan CSV / export output
 results/
+# Downloaded OCR model weights (fetched locally, not source)
 easyocr_models/
+
+# --- Project notes (local only) ---
+.docs/
+docs/
+
+# --- Temp / scratch ---
+tmp/
+temp/
+*.tmp
+*.temp
+*.log
+*_tmp*
+_tmp*
+*.bak
+*.orig
 GunsmokeScanner_legacy.py
-# IDE
+FrontlineSmoke/
+
+# --- IDE / editor ---
 .vscode/
 .idea/
 *.swp
-# OS
+*.swo
+*~
+
+# --- OS ---
 .DS_Store
 Thumbs.db
-FrontlineSmoke/
+Desktop.ini
