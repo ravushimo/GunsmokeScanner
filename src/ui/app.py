@@ -16,12 +16,14 @@ from src.constants import APP_VERSION, GITHUB_URL, SITE_URL, THEME
 from src.core.layouts import (
     apply_gacha_layout,
     apply_gunsmoke_layout,
+    apply_inventory_layout,
     find_layout,
 )
 from src.core.ocr import OCRProcessor
 from src.core.season import SeasonManager
 from src.core.updater import UpdateChecker
 from src.data.gacha_db import GachaDB
+from src.data.inventory_db import InventoryDB
 from src.ui.components.mode_nav import ModeNav, build_mode_switch
 from src.ui.components.overlay import OverlayManager
 from src.ui.fonts import load_fonts
@@ -32,6 +34,9 @@ from src.ui.tabs.gacha_collection import GachaCollectionTab
 from src.ui.tabs.gacha_history import GachaHistoryTab
 from src.ui.tabs.gacha_setup import GachaSetupTab
 from src.ui.tabs.gacha_stats import GachaStatsTab
+from src.ui.tabs.inventory_capture import InventoryCaptureTab
+from src.ui.tabs.inventory_list import InventoryListTab
+from src.ui.tabs.inventory_setup import InventorySetupTab
 from src.ui.tabs.setup import SetupTab
 from src.ui.tabs.upload import UploadTab
 
@@ -51,6 +56,7 @@ class GunsmokeApp:
         self.ocr_processor = OCRProcessor(self.config_manager.get("ocr_languages"))
         self.updater = UpdateChecker()
         self.gacha_db = GachaDB()
+        self.inventory_db = InventoryDB()
 
         # CTk theme has to be applied before the root window is constructed so
         # that the dark gunsmoke.app palette takes effect.
@@ -58,7 +64,7 @@ class GunsmokeApp:
 
         self.root = ctk.CTk()
         self.root.title(
-            f"Gunsmoke Scanner v{APP_VERSION} - Leaderboard Scanner for gunsmoke.app"
+            f"Gunsmoke Scanner v{APP_VERSION} - Leaderboard / Gacha / Inventory"
         )
         self.root.geometry("720x960")
         self.root.minsize(640, 720)
@@ -93,6 +99,8 @@ class GunsmokeApp:
 
         try:
             keyboard.add_hotkey("f9", self._on_f9)
+            keyboard.add_hotkey("f8", self._on_f8)
+            keyboard.add_hotkey("f10", self._on_f10)
             keyboard.add_hotkey("f5", self._on_f5)
             keyboard.add_hotkey("f4", self._on_f4)
         except Exception as e:
@@ -101,17 +109,28 @@ class GunsmokeApp:
         self.root.after(1000, self.check_updates)
 
     def _on_f9(self):
-        """Mode-aware F9: gacha scan in Gacha Capture; else Gunsmoke capture."""
-        if self._mode == "gacha" and self._tab_id == "capture":
+        """Mode-aware F9: inventory full scan / gacha scan / Gunsmoke capture."""
+        if self._mode == "inventory":
+            self.inventory_capture_tab.start_full_scan()
+        elif self._mode == "gacha" and self._tab_id == "capture":
             self.gacha_capture_tab.start_scan_thread()
         else:
             self.capture_tab.start_capture_thread()
 
+    def _on_f8(self):
+        if self._mode == "inventory":
+            self.inventory_capture_tab.start_single()
+
+    def _on_f10(self):
+        if self._mode == "inventory":
+            self.inventory_capture_tab.start_last_row()
+
     def _on_f5(self):
-        """Stop automated gacha multi-page scan (same as Stop button)."""
-        if self._mode != "gacha":
-            return
-        self.gacha_capture_tab.stop_scan()
+        """Stop automated scans (Gacha / Inventory)."""
+        if self._mode == "gacha":
+            self.gacha_capture_tab.stop_scan()
+        elif self._mode == "inventory":
+            self.inventory_capture_tab.stop_scan()
 
     def _on_f4(self):
         """Apply bundled layout template for current screen size + mode."""
@@ -119,7 +138,11 @@ class GunsmokeApp:
 
     def apply_layout_for_screen(self):
         width, height = pyautogui.size()
-        mode = self._mode if self._mode in ("gacha", "gunsmoke") else "gunsmoke"
+        mode = (
+            self._mode
+            if self._mode in ("gacha", "gunsmoke", "inventory")
+            else "gunsmoke"
+        )
         layout, reason = find_layout(mode, width, height)
         if not layout:
             messagebox.showinfo(
@@ -139,6 +162,8 @@ class GunsmokeApp:
 
         if mode == "gacha":
             apply_gacha_layout(self.config_manager.config, layout)
+        elif mode == "inventory":
+            apply_inventory_layout(self.config_manager.config, layout)
         else:
             apply_gunsmoke_layout(self.config_manager.config, layout)
         self.config_manager.save_config()
@@ -149,6 +174,8 @@ class GunsmokeApp:
             self.gacha_setup_tab.update_region_info()
         if mode == "gunsmoke" and hasattr(self, "setup_tab"):
             self.setup_tab.update_region_info()
+        if mode == "inventory" and hasattr(self, "inventory_setup_tab"):
+            self.inventory_setup_tab.update_region_info()
 
         messagebox.showinfo("Layout applied", f"{note}\nOverlays refreshed if visible.")
 
@@ -410,13 +437,43 @@ class GunsmokeApp:
         )
         self.gacha_capture_tab.pack(fill=tk.BOTH, expand=True)
 
+        self.inventory_setup_tab = InventorySetupTab(
+            page("inventory.setup"),
+            self.config_manager,
+            self.overlay_manager,
+            self.fonts,
+            ocr_processor=self.ocr_processor,
+            on_apply_layout=self.apply_layout_for_screen,
+        )
+        self.inventory_setup_tab.pack(fill=tk.BOTH, expand=True)
+
+        self.inventory_list_tab = InventoryListTab(
+            page("inventory.list"),
+            self.fonts,
+            db=self.inventory_db,
+        )
+        self.inventory_list_tab.pack(fill=tk.BOTH, expand=True)
+
+        self.inventory_capture_tab = InventoryCaptureTab(
+            page("inventory.capture"),
+            self.config_manager,
+            self.ocr_processor,
+            self.overlay_manager,
+            self.fonts,
+            db=self.inventory_db,
+            on_inventory_refresh=self.inventory_list_tab.refresh,
+            overlay_var=self.overlay_var,
+        )
+        self.inventory_capture_tab.pack(fill=tk.BOTH, expand=True)
+
     def _restore_ui_state(self):
         ui = self.config_manager.get_ui()
         mode = ui.get("mode", "gunsmoke")
         tab_id = (ui.get("last_tab") or {}).get(mode, "capture")
         # Avoid double-save on first paint: set mode switch label, then nav
-        label = "Gunsmoke" if mode == "gunsmoke" else "Gacha"
-        self.mode_switch.set(label)
+        from src.ui.components.mode_nav import mode_label
+
+        self.mode_switch.set(mode_label(mode))
         self.mode_nav.set_mode(mode, tab_id)
 
     def _on_mode_switch(self, mode: str):
@@ -437,6 +494,8 @@ class GunsmokeApp:
             self.gacha_stats_tab.refresh()
         if mode == "gacha" and tab_id == "collection":
             self.gacha_collection_tab.refresh()
+        if mode == "inventory" and tab_id == "list":
+            self.inventory_list_tab.refresh()
 
     def _show_page(self, mode: str, tab_id: str):
         key = f"{mode}.{tab_id}"
@@ -459,8 +518,12 @@ class GunsmokeApp:
             self.gacha_setup_tab.activate()
         elif self._mode == "gunsmoke" and self._tab_id == "setup":
             self.setup_tab.activate()
+        elif self._mode == "inventory" and self._tab_id == "setup":
+            self.inventory_setup_tab.activate()
         elif self._mode == "gacha":
             self.overlay_manager.set_profile("gacha")
+        elif self._mode == "inventory":
+            self.overlay_manager.set_profile("inventory")
         else:
             self.overlay_manager.set_profile("gunsmoke")
 

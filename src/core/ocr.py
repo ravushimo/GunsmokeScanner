@@ -2,7 +2,31 @@ import cv2
 import numpy as np
 import easyocr
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
+
+def detect_ocr_device() -> Tuple[bool, str]:
+    """Return (use_gpu, human-readable device label).
+
+    Also smoke-tests a tiny CUDA tensor so an incompatible wheel (wrong
+    compute capability) falls back to CPU instead of crashing mid-OCR.
+    """
+    try:
+        import torch
+
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+            name = torch.cuda.get_device_name(0)
+            try:
+                torch.zeros(1, device="cuda")
+            except Exception as e:
+                return False, f"CPU (CUDA present but unusable on {name}: {e})"
+            return True, f"CUDA ({name})"
+        build = getattr(torch.version, "cuda", None)
+        if build is None:
+            return False, "CPU (torch is CPU-only build — run scripts/ensure_torch.py)"
+        return False, "CPU (CUDA build present but no GPU visible)"
+    except Exception as e:
+        return False, f"CPU (torch check failed: {e})"
 
 
 class OCRProcessor:
@@ -10,9 +34,14 @@ class OCRProcessor:
         if languages is None:
             languages = ["ch_sim", "en"]
 
+        use_gpu, device_label = detect_ocr_device()
         print("Loading EasyOCR models...")
+        print(f"EasyOCR device: {device_label}")
+        self.use_gpu = use_gpu
         self.reader = easyocr.Reader(
-            languages, gpu=True, model_storage_directory="./easyocr_models"
+            languages,
+            gpu=use_gpu,
+            model_storage_directory="./easyocr_models",
         )
         print("EasyOCR ready!")
 

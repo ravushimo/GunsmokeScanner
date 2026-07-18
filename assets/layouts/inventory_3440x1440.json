@@ -1,0 +1,20 @@
+{
+  "mode": "inventory",
+  "resolution": [3440, 1440],
+  "cols": 14,
+  "rows": 6,
+  "grid": [420, 220, 1680, 780],
+  "cell_lock_inset": [10, 48, 40, 40],
+  "type": [2580, 720, 420, 36],
+  "perks": [2580, 780, 720, 300],
+  "lock_btn": [3320, 175, 52, 52],
+  "own_count": [1980, 130, 220, 36],
+  "click_delay_ms": 80,
+  "ocr_settle_ms": 250,
+  "lock_click_delay_ms": 120,
+  "scroll_rows": 5,
+  "scroll_extra_px": 24,
+  "skip_rows_after_scroll": 1,
+  "scroll_duration_ms": 700,
+  "scroll_settle_ms": 500
+}

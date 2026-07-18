@@ -1,4 +1,4 @@
-"""Gunsmoke | Gacha mode switch + underline tab strip."""
+"""Gunsmoke | Gacha | Inventory mode switch + underline tab strip."""
 
 from __future__ import annotations
 
@@ -25,10 +25,26 @@ MODE_TABS: Dict[str, ModeTabs] = {
         ("stats", "Stats"),
         ("collection", "Collection"),
     ),
+    "inventory": (
+        ("setup", "Setup"),
+        ("capture", "Capture"),
+        ("list", "Inventory"),
+    ),
 }
 
-MODE_LABELS = ("Gunsmoke", "Gacha")
-MODE_IDS = ("gunsmoke", "gacha")
+MODE_LABELS = ("Gunsmoke", "Gacha", "Inventory")
+MODE_IDS = ("gunsmoke", "gacha", "inventory")
+
+_LABEL_TO_ID = {
+    "Gunsmoke": "gunsmoke",
+    "Gacha": "gacha",
+    "Inventory": "inventory",
+}
+_ID_TO_LABEL = {v: k for k, v in _LABEL_TO_ID.items()}
+
+
+def mode_label(mode_id: str) -> str:
+    return _ID_TO_LABEL.get(mode_id, "Gunsmoke")
 
 
 class ModeNav(ctk.CTkFrame):
@@ -159,8 +175,8 @@ def build_mode_switch(
     initial: str,
     on_mode: Callable[[str], None],
 ) -> ctk.CTkSegmentedButton:
-    """Compact Gunsmoke | Gacha control for the header."""
-    label = "Gunsmoke" if initial == "gunsmoke" else "Gacha"
+    """Compact Gunsmoke | Gacha | Inventory control for the header."""
+    label = _ID_TO_LABEL.get(initial, "Gunsmoke")
     seg = ctk.CTkSegmentedButton(
         parent,
         values=list(MODE_LABELS),
@@ -172,7 +188,7 @@ def build_mode_switch(
         fg_color=THEME["bg_raised"],
         text_color=THEME["text_strong"],
         height=32,
-        command=lambda v: on_mode("gunsmoke" if v == "Gunsmoke" else "gacha"),
+        command=lambda v: on_mode(_LABEL_TO_ID.get(v, "gunsmoke")),
     )
     seg.set(label)
     return seg

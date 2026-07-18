@@ -10,9 +10,55 @@ from src.constants import (
     GACHA_DEFAULT_PREPROCESSING,
     GACHA_EXTRA_REGIONS,
     GACHA_ROW_COLUMNS,
+    INVENTORY_GROWTH_REGIONS,
 )
 
 CONFIG_FILE = "config.json"
+
+
+def _default_inventory_growth_block(screen_w: int, screen_h: int) -> dict:
+    """Placeholder Growth Data regions (tuned for 3440×1440; calibrate in Setup)."""
+    # Prefer ultrawide layout defaults when screen matches; else scale from center.
+    if screen_w >= 3400 and screen_h >= 1400:
+        return {
+            "cols": 14,
+            "rows": 6,
+            "grid": [420, 220, 1680, 780],
+            "cell_lock_inset": [10, 48, 40, 40],
+            "type": [2580, 720, 420, 36],
+            "perks": [2580, 780, 720, 300],
+            "lock_btn": [3320, 175, 52, 52],
+            "own_count": [1980, 130, 220, 36],
+            "click_delay_ms": 80,
+            "ocr_settle_ms": 250,
+            "lock_click_delay_ms": 120,
+            # Scroll ~5 cell heights (1-row overlap); tune scroll_extra_px if needed
+            "scroll_rows": 5,
+            "scroll_extra_px": 24,
+            "skip_rows_after_scroll": 1,
+            "scroll_duration_ms": 700,
+            "scroll_settle_ms": 500,
+        }
+
+    cx, cy = screen_w // 2, screen_h // 2
+    return {
+        "cols": 14,
+        "rows": 6,
+        "grid": [cx - 700, cy - 320, 900, 520],
+        "cell_lock_inset": [8, 36, 32, 32],
+        "type": [cx + 280, cy + 80, 280, 32],
+        "perks": [cx + 280, cy + 120, 400, 220],
+        "lock_btn": [cx + 700, cy - 300, 44, 44],
+        "own_count": [cx + 40, cy - 340, 160, 32],
+        "click_delay_ms": 80,
+        "ocr_settle_ms": 250,
+        "lock_click_delay_ms": 120,
+        "scroll_rows": 5,
+        "scroll_extra_px": 16,
+        "skip_rows_after_scroll": 1,
+        "scroll_duration_ms": 700,
+        "scroll_settle_ms": 500,
+    }
 
 
 def _default_gacha_block(screen_w: int, screen_h: int) -> dict:
@@ -76,6 +122,7 @@ class ConfigManager:
                 self.create_default_config()
                 return
             self.ensure_gacha_config()
+            self.ensure_inventory_config()
             self.ensure_ui_config()
 
     def create_default_config(self):
@@ -103,6 +150,9 @@ class ConfigManager:
             )
 
         self.config["gacha"] = _default_gacha_block(screen_w, screen_h)
+        self.config["inventory"] = {
+            "growth": _default_inventory_growth_block(screen_w, screen_h),
+        }
 
         self.config["metadata"] = {
             "generated_by": "gunsmoke_scanner_default",
@@ -153,6 +203,46 @@ class ConfigManager:
         self.ensure_gacha_config()
         return self.config["gacha"]
 
+    def ensure_inventory_config(self) -> None:
+        """Migrate older configs that lack the inventory.growth block."""
+        inv = self.config.get("inventory")
+        changed = False
+        if not isinstance(inv, dict):
+            screen_w, screen_h = pyautogui.size()
+            self.config["inventory"] = {
+                "growth": _default_inventory_growth_block(screen_w, screen_h),
+            }
+            self.save_config()
+            return
+
+        growth = inv.get("growth")
+        if not isinstance(growth, dict):
+            screen_w, screen_h = pyautogui.size()
+            inv["growth"] = _default_inventory_growth_block(screen_w, screen_h)
+            self.save_config()
+            return
+
+        defaults = _default_inventory_growth_block(*pyautogui.size())
+        # Drop abandoned identity regions (name OCR / icon match)
+        for legacy in ("name", "icon"):
+            if legacy in growth:
+                del growth[legacy]
+                changed = True
+        for key in INVENTORY_GROWTH_REGIONS:
+            if key not in growth or not isinstance(growth.get(key), list):
+                growth[key] = list(defaults[key])
+                changed = True
+        for key, default in defaults.items():
+            if key not in growth:
+                growth[key] = default
+                changed = True
+        if changed:
+            self.save_config()
+
+    def get_inventory_growth(self) -> dict:
+        self.ensure_inventory_config()
+        return self.config["inventory"]["growth"]
+
     def ensure_ui_config(self) -> None:
         """Ensure ui.mode / ui.last_tab exist with valid values."""
         ui = self.config.get("ui")
@@ -166,7 +256,7 @@ class ConfigManager:
             return
 
         mode = ui.get("mode")
-        if mode not in ("gunsmoke", "gacha"):
+        if mode not in ("gunsmoke", "gacha", "inventory"):
             ui["mode"] = DEFAULT_UI["mode"]
             changed = True
 
@@ -189,14 +279,14 @@ class ConfigManager:
 
     def set_ui_mode(self, mode: str) -> None:
         ui = self.get_ui()
-        if mode not in ("gunsmoke", "gacha"):
+        if mode not in ("gunsmoke", "gacha", "inventory"):
             return
         ui["mode"] = mode
         self.save_config()
 
     def set_ui_tab(self, mode: str, tab_id: str) -> None:
         ui = self.get_ui()
-        if mode not in ("gunsmoke", "gacha"):
+        if mode not in ("gunsmoke", "gacha", "inventory"):
             return
         last = ui.setdefault("last_tab", {})
         last[mode] = tab_id

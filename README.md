@@ -48,9 +48,19 @@ Fonts: IBM Plex Sans bundled under `assets/fonts/`.
 ## Installation (dev)
 
 ```bash
-pip install -r requirements.txt
+install_deps.bat
 python main.py
 ```
+
+Or manually:
+
+```bash
+pip install -r requirements.txt
+python scripts/ensure_torch.py
+python main.py
+```
+
+`ensure_torch.py` checks for an NVIDIA GPU (`nvidia-smi`). If present, it installs the CUDA PyTorch wheel; otherwise it keeps CPU torch. **Card model does not matter** (any recent RTX/GTX with drivers uses the same build). At runtime EasyOCR auto-enables GPU when `torch.cuda.is_available()`.
 
 Python 3.9+ recommended.
 
@@ -67,7 +77,15 @@ Python 3.9+ recommended.
 compile.bat
 ```
 
-Output: `dist/GunsmokeScanner/` (onedir). EasyOCR models are copied from `easyocr_models/` if present.
+Builds **two** onedir releases (torch is baked in, so CPU and CUDA cannot share one folder):
+
+| Output | Notes |
+|--------|--------|
+| `dist/GunsmokeScanner-CPU/` | CPU OCR — smaller, works everywhere |
+| `dist/GunsmokeScanner-CUDA/` | CUDA OCR — needs NVIDIA GPU + drivers |
+| `dist/GunsmokeScanner-*-vX.Y.Z.7z` | 7-Zip archives (if 7-Zip is installed) |
+
+Requires `.venv`, project deps, and preferably `easyocr_models/`. The script switches the venv between CPU and CUDA torch between the two PyInstaller runs.
 
 ## Usage
 

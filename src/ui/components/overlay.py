@@ -8,7 +8,12 @@ be borderless, semi-transparent, and click-draggable above any other window.
 
 import tkinter as tk
 
-from src.constants import GACHA_EXTRA_REGIONS, GACHA_ROW_COLUMNS, THEME
+from src.constants import (
+    GACHA_EXTRA_REGIONS,
+    GACHA_ROW_COLUMNS,
+    INVENTORY_GROWTH_REGIONS,
+    THEME,
+)
 
 GUNSMOKE_COLUMNS = ("nickname", "single_high", "total_score")
 
@@ -23,6 +28,11 @@ COLUMN_COLORS = {
     "page_number": THEME["warning"],
     "btn_prev": THEME["text_muted"],
     "btn_next": THEME["text_muted"],
+    "grid": THEME["class_bulwark"],
+    "icon": THEME["class_vanguard"],
+    "perks": THEME["class_support"],
+    "lock_btn": THEME["accent_orange"],
+    "own_count": THEME["warning"],
 }
 
 COLUMN_LABEL = {
@@ -36,6 +46,11 @@ COLUMN_LABEL = {
     "page_number": "Page",
     "btn_prev": "Prev",
     "btn_next": "Next",
+    "grid": "Grid",
+    "icon": "Icon",
+    "perks": "Perks",
+    "lock_btn": "Lock",
+    "own_count": "Own",
 }
 
 EDGE_PX = 10
@@ -52,7 +67,7 @@ class OverlayManager:
         self.fonts = fonts
         self.on_update_callback = on_update_callback
 
-        self.profile = "gunsmoke"  # "gunsmoke" | "gacha"
+        self.profile = "gunsmoke"  # "gunsmoke" | "gacha" | "inventory"
         self.move_lock = "none"  # "none" | "column" | "row"
         self.selected = None  # (row_idx|None, col_name)
 
@@ -65,7 +80,7 @@ class OverlayManager:
         self._keys_bound = False
 
     def set_profile(self, profile: str):
-        if profile not in ("gunsmoke", "gacha"):
+        if profile not in ("gunsmoke", "gacha", "inventory"):
             return
         was_active = self.active
         self.profile = profile
@@ -101,6 +116,8 @@ class OverlayManager:
     def _table_columns(self):
         if self.profile == "gacha":
             return GACHA_ROW_COLUMNS
+        if self.profile == "inventory":
+            return INVENTORY_GROWTH_REGIONS
         return GUNSMOKE_COLUMNS
 
     def _iter_regions(self):
@@ -114,6 +131,11 @@ class OverlayManager:
             for col_name in GACHA_EXTRA_REGIONS:
                 if col_name in gacha:
                     yield None, col_name, gacha[col_name]
+        elif self.profile == "inventory":
+            growth = self.config_manager.get_inventory_growth()
+            for col_name in INVENTORY_GROWTH_REGIONS:
+                if col_name in growth:
+                    yield None, col_name, growth[col_name]
         else:
             rows = self.config_manager.get("rows", [])
             for row_idx, row_data in enumerate(rows):
@@ -268,6 +290,10 @@ class OverlayManager:
                 return gacha, col_name, gacha[col_name]
             return gacha["rows"][row_idx], col_name, gacha["rows"][row_idx][col_name]
 
+        if self.profile == "inventory":
+            growth = self.config_manager.get_inventory_growth()
+            return growth, col_name, growth[col_name]
+
         rows = self.config_manager.get("rows")
         return rows[row_idx], col_name, rows[row_idx][col_name]
 
@@ -280,6 +306,8 @@ class OverlayManager:
         if self.move_lock == "column" and row_idx is not None:
             if self.profile == "gacha":
                 n = len(self.config_manager.get_gacha().get("rows", []))
+            elif self.profile == "inventory":
+                return [(row_idx, col_name)]
             else:
                 n = len(self.config_manager.get("rows", []))
             return [(i, col_name) for i in range(n)]

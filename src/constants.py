@@ -48,6 +48,7 @@ DEFAULT_UI = {
     "last_tab": {
         "gunsmoke": "capture",
         "gacha": "capture",
+        "inventory": "capture",
     },
 }
 
@@ -81,5 +82,13 @@ GACHA_DEFAULT_PREPROCESSING = {
     "kernel_size": [2, 2],
 }
 
+# Growth Data (Inventory) calibratable screen regions (flat under inventory.growth).
+INVENTORY_GROWTH_REGIONS = (
+    "grid",
+    "type",
+    "perks",
+    "lock_btn",
+    "own_count",
+)
 
 APP_VERSION = "1.3.0"

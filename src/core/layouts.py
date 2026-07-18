@@ -7,7 +7,11 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.constants import GACHA_EXTRA_REGIONS, GACHA_ROW_COLUMNS
+from src.constants import (
+    GACHA_EXTRA_REGIONS,
+    GACHA_ROW_COLUMNS,
+    INVENTORY_GROWTH_REGIONS,
+)
 
 Layout = Dict[str, Any]
 
@@ -153,6 +157,62 @@ def apply_gunsmoke_layout(config: Dict[str, Any], layout: Layout) -> None:
         {k: list(v) for k, v in row.items()}
         for row in layout.get("rows") or []
     ]
+    res = layout.get("resolution")
+    if res:
+        config["screen_resolution"] = [int(res[0]), int(res[1])]
+
+
+def layout_from_inventory_growth(
+    growth: Dict[str, Any], width: int, height: int
+) -> Layout:
+    out: Layout = {
+        "mode": "inventory",
+        "resolution": [width, height],
+        "cols": int(growth.get("cols", 14)),
+        "rows": int(growth.get("rows", 6)),
+        "cell_lock_inset": list(growth.get("cell_lock_inset") or [10, 48, 40, 40]),
+    }
+    for key in INVENTORY_GROWTH_REGIONS:
+        if key in growth:
+            out[key] = list(growth[key])
+    for key in (
+        "click_delay_ms",
+        "ocr_settle_ms",
+        "lock_click_delay_ms",
+        "scroll_rows",
+        "scroll_extra_px",
+        "skip_rows_after_scroll",
+        "scroll_duration_ms",
+        "scroll_settle_ms",
+    ):
+        if key in growth:
+            out[key] = growth[key]
+    return out
+
+
+def apply_inventory_layout(config: Dict[str, Any], layout: Layout) -> None:
+    growth = config.setdefault("inventory", {}).setdefault("growth", {})
+    for key in INVENTORY_GROWTH_REGIONS:
+        if key in layout:
+            growth[key] = list(layout[key])
+    if "cols" in layout:
+        growth["cols"] = int(layout["cols"])
+    if "rows" in layout:
+        growth["rows"] = int(layout["rows"])
+    if "cell_lock_inset" in layout:
+        growth["cell_lock_inset"] = list(layout["cell_lock_inset"])
+    for key in (
+        "click_delay_ms",
+        "ocr_settle_ms",
+        "lock_click_delay_ms",
+        "scroll_rows",
+        "scroll_extra_px",
+        "skip_rows_after_scroll",
+        "scroll_duration_ms",
+        "scroll_settle_ms",
+    ):
+        if key in layout:
+            growth[key] = layout[key]
     res = layout.get("resolution")
     if res:
         config["screen_resolution"] = [int(res[0]), int(res[1])]

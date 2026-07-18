@@ -1,0 +1,1327 @@
+{
+  "version": 1,
+  "source": "gunsmoke.app export creator_id=3",
+  "prefixes": [
+    "Aggressive Attack",
+    "Ambush",
+    "Antivenom",
+    "Assault",
+    "Ballistic Ammo",
+    "Bloodthirst",
+    "Burn",
+    "Catalyst",
+    "Corrosion",
+    "Desiccant",
+    "Dissolve",
+    "Electric",
+    "Electrified",
+    "Eradication",
+    "Fireproof",
+    "Flood",
+    "Fortress",
+    "Freeze",
+    "Frost Halo",
+    "Glaciate",
+    "Hydro",
+    "Ignition",
+    "Immersion Therapy",
+    "Insulation",
+    "Lone Rider",
+    "Overload",
+    "Overlord",
+    "Potential Energy",
+    "Sneak Attack",
+    "Strike",
+    "Winterized"
+  ],
+  "suffixes": [
+    "Cataphyll Stem",
+    "Crownslayer",
+    "Crownslayer Blossom",
+    "Dewdrop Leaf",
+    "Emerald Leaf",
+    "Entropic Stem",
+    "Fissure Stem",
+    "Flameflower",
+    "Heaven Blossom",
+    "Keen Stem",
+    "Marrow Root",
+    "Matrix Leaf",
+    "Reverse-Thorne",
+    "Reverse-Thorned",
+    "Reverse-Thorned Leaf",
+    "Sanguine Root",
+    "Sepal Bloom",
+    "Stratified Root",
+    "Thousand-Strand",
+    "Thousand-Strand Root"
+  ],
+  "pairs": [
+    {
+      "prefix": "Aggressive Attack",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Aggressive Attack",
+      "suffix": "Crownslayer"
+    },
+    {
+      "prefix": "Aggressive Attack",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Aggressive Attack",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Aggressive Attack",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Aggressive Attack",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Aggressive Attack",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Ambush",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Ambush",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Ambush",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Ambush",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Ambush",
+      "suffix": "Thousand-Strand Root"
+    },
+    {
+      "prefix": "Antivenom",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Antivenom",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Antivenom",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Antivenom",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Antivenom",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Antivenom",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Antivenom",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Antivenom",
+      "suffix": "Thousand-Strand Root"
+    },
+    {
+      "prefix": "Assault",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Assault",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Assault",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Assault",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Assault",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Assault",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Assault",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Assault",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Ballistic Ammo",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Ballistic Ammo",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Ballistic Ammo",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Ballistic Ammo",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Ballistic Ammo",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Ballistic Ammo",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Ballistic Ammo",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Ballistic Ammo",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Bloodthirst",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Bloodthirst",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Bloodthirst",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Bloodthirst",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Bloodthirst",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Bloodthirst",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Burn",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Burn",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Burn",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Burn",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Burn",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Burn",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Catalyst",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Catalyst",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Catalyst",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Catalyst",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Catalyst",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Corrosion",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Corrosion",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Corrosion",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Corrosion",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Corrosion",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Corrosion",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Corrosion",
+      "suffix": "Thousand-Strand Root"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Desiccant",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Dissolve",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Dissolve",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Dissolve",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Dissolve",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Dissolve",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Dissolve",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Dissolve",
+      "suffix": "Thousand-Strand Root"
+    },
+    {
+      "prefix": "Electric",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Electric",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Electric",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Electric",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Electric",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Electric",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Electric",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Electric",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Electrified",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Electrified",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Electrified",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Electrified",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Electrified",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Eradication",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Eradication",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Eradication",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Eradication",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Eradication",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Eradication",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Fireproof",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Fireproof",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Fireproof",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Fireproof",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Fireproof",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Flood",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Fortress",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Fortress",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Fortress",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Fortress",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Fortress",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Fortress",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Freeze",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Freeze",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Freeze",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Freeze",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Freeze",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Freeze",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Freeze",
+      "suffix": "Thousand-Strand Root"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Reverse-Thorned"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Frost Halo",
+      "suffix": "Thousand-Strand"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Glaciate",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Hydro",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Hydro",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Hydro",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Hydro",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Hydro",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Hydro",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Hydro",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Hydro",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Ignition",
+      "suffix": "Thousand-Strand Root"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Crownslayer"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Reverse-Thorne"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Immersion Therapy",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Insulation",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Insulation",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Insulation",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Insulation",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Insulation",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Insulation",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Reverse-Thorned"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Lone Rider",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Overload",
+      "suffix": "Thousand-Strand Root"
+    },
+    {
+      "prefix": "Overlord",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Crownslayer"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Reverse-Thorned"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Sepal Bloom"
+    },
+    {
+      "prefix": "Potential Energy",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Crownslayer"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Reverse-Thorned"
+    },
+    {
+      "prefix": "Sneak Attack",
+      "suffix": "Sanguine Root"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Cataphyll Stem"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Crownslayer Blossom"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Entropic Stem"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Heaven Blossom"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Keen Stem"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Strike",
+      "suffix": "Stratified Root"
+    },
+    {
+      "prefix": "Winterized",
+      "suffix": "Dewdrop Leaf"
+    },
+    {
+      "prefix": "Winterized",
+      "suffix": "Emerald Leaf"
+    },
+    {
+      "prefix": "Winterized",
+      "suffix": "Fissure Stem"
+    },
+    {
+      "prefix": "Winterized",
+      "suffix": "Flameflower"
+    },
+    {
+      "prefix": "Winterized",
+      "suffix": "Marrow Root"
+    },
+    {
+      "prefix": "Winterized",
+      "suffix": "Matrix Leaf"
+    },
+    {
+      "prefix": "Winterized",
+      "suffix": "Reverse-Thorned Leaf"
+    },
+    {
+      "prefix": "Winterized",
+      "suffix": "Sanguine Root"
+    }
+  ],
+  "perks": [
+    {
+      "id": 38,
+      "name": "Annular Defense",
+      "type": "Bulwark"
+    },
+    {
+      "id": 31,
+      "name": "Boss Countermeasures",
+      "type": "Bulwark"
+    },
+    {
+      "id": 23,
+      "name": "Breakout Countermeasures",
+      "type": "Bulwark"
+    },
+    {
+      "id": 32,
+      "name": "Burn Resistance",
+      "type": "Bulwark"
+    },
+    {
+      "id": 27,
+      "name": "Corrosion Resistance",
+      "type": "Bulwark"
+    },
+    {
+      "id": 48,
+      "name": "Defense Boost",
+      "type": "Bulwark"
+    },
+    {
+      "id": 53,
+      "name": "Electric Resistance",
+      "type": "Bulwark"
+    },
+    {
+      "id": 46,
+      "name": "Freeze Resistance",
+      "type": "Bulwark"
+    },
+    {
+      "id": 36,
+      "name": "HP Boost",
+      "type": "Bulwark"
+    },
+    {
+      "id": 44,
+      "name": "Hydro Resistance",
+      "type": "Bulwark"
+    },
+    {
+      "id": 26,
+      "name": "Lex Talionis",
+      "type": "Bulwark"
+    },
+    {
+      "id": 10,
+      "name": "Lone Rider Countermeasures",
+      "type": "Bulwark"
+    },
+    {
+      "id": 28,
+      "name": "Melee Countermeasures",
+      "type": "Bulwark"
+    },
+    {
+      "id": 8,
+      "name": "Physical Resistance",
+      "type": "Bulwark"
+    },
+    {
+      "id": 45,
+      "name": "Pinpoint Defense",
+      "type": "Bulwark"
+    },
+    {
+      "id": 16,
+      "name": "Area Specialization",
+      "type": "Sentinel"
+    },
+    {
+      "id": 1,
+      "name": "Attack Boost",
+      "type": "Sentinel"
+    },
+    {
+      "id": 7,
+      "name": "Burn Boost",
+      "type": "Sentinel"
+    },
+    {
+      "id": 13,
+      "name": "Corrosion Boost",
+      "type": "Sentinel"
+    },
+    {
+      "id": 30,
+      "name": "Critical Boost",
+      "type": "Sentinel"
+    },
+    {
+      "id": 34,
+      "name": "Electric Boost",
+      "type": "Sentinel"
+    },
+    {
+      "id": 24,
+      "name": "Follow-Up Strike",
+      "type": "Sentinel"
+    },
+    {
+      "id": 29,
+      "name": "Freeze Boost",
+      "type": "Sentinel"
+    },
+    {
+      "id": 9,
+      "name": "Headhunter",
+      "type": "Sentinel"
+    },
+    {
+      "id": 35,
+      "name": "Hydro Boost",
+      "type": "Sentinel"
+    },
+    {
+      "id": 6,
+      "name": "Onslaught Stance",
+      "type": "Sentinel"
+    },
+    {
+      "id": 17,
+      "name": "Physical Boost",
+      "type": "Sentinel"
+    },
+    {
+      "id": 12,
+      "name": "Pinpoint Specialization",
+      "type": "Sentinel"
+    },
+    {
+      "id": 51,
+      "name": "Raid Stance",
+      "type": "Sentinel"
+    },
+    {
+      "id": 3,
+      "name": "Thronebreaker",
+      "type": "Sentinel"
+    },
+    {
+      "id": 57,
+      "name": "Attack Unity",
+      "type": "Support"
+    },
+    {
+      "id": 2,
+      "name": "Burn Unity",
+      "type": "Support"
+    },
+    {
+      "id": 41,
+      "name": "Corrosion Unity",
+      "type": "Support"
+    },
+    {
+      "id": 37,
+      "name": "Electric Unity",
+      "type": "Support"
+    },
+    {
+      "id": 22,
+      "name": "Equilibrium Recovery",
+      "type": "Support"
+    },
+    {
+      "id": 58,
+      "name": "Fighting Spirit",
+      "type": "Support"
+    },
+    {
+      "id": 47,
+      "name": "Freeze Unity",
+      "type": "Support"
+    },
+    {
+      "id": 59,
+      "name": "Healing Boost",
+      "type": "Support"
+    },
+    {
+      "id": 60,
+      "name": "HP Unity",
+      "type": "Support"
+    },
+    {
+      "id": 49,
+      "name": "Hydro Unity",
+      "type": "Support"
+    },
+    {
+      "id": 18,
+      "name": "Ichor Conversion",
+      "type": "Support"
+    },
+    {
+      "id": 50,
+      "name": "Ichor Resonance",
+      "type": "Support"
+    },
+    {
+      "id": 39,
+      "name": "Life Recovery",
+      "type": "Support"
+    },
+    {
+      "id": 52,
+      "name": "Physical Unity",
+      "type": "Support"
+    },
+    {
+      "id": 15,
+      "name": "Purification Feedback",
+      "type": "Support"
+    },
+    {
+      "id": 4,
+      "name": "Ambush Mastery",
+      "type": "Vanguard"
+    },
+    {
+      "id": 54,
+      "name": "Area Smite",
+      "type": "Vanguard"
+    },
+    {
+      "id": 40,
+      "name": "Beheading Blade",
+      "type": "Vanguard"
+    },
+    {
+      "id": 20,
+      "name": "Bloodthirst",
+      "type": "Vanguard"
+    },
+    {
+      "id": 19,
+      "name": "Burning Smite",
+      "type": "Vanguard"
+    },
+    {
+      "id": 21,
+      "name": "Corrosive Smite",
+      "type": "Vanguard"
+    },
+    {
+      "id": 11,
+      "name": "CQC Elite",
+      "type": "Vanguard"
+    },
+    {
+      "id": 33,
+      "name": "Electric Smite",
+      "type": "Vanguard"
+    },
+    {
+      "id": 43,
+      "name": "Freezing Smite",
+      "type": "Vanguard"
+    },
+    {
+      "id": 14,
+      "name": "Hydro Smite",
+      "type": "Vanguard"
+    },
+    {
+      "id": 56,
+      "name": "Onslaught Mastery",
+      "type": "Vanguard"
+    },
+    {
+      "id": 25,
+      "name": "Physical Smite",
+      "type": "Vanguard"
+    },
+    {
+      "id": 55,
+      "name": "Precision Blow",
+      "type": "Vanguard"
+    },
+    {
+      "id": 5,
+      "name": "Shock and Awe",
+      "type": "Vanguard"
+    },
+    {
+      "id": 42,
+      "name": "Smite Boost",
+      "type": "Vanguard"
+    }
+  ]
+}

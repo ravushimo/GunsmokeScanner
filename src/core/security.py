@@ -42,5 +42,6 @@ def decrypt_password(encrypted_password: str) -> str:
         cipher = Fernet(key)
         return cipher.decrypt(encrypted_password.encode()).decode()
     except Exception as e:
-        print(f"Decryption error: {e}")
+        # Common when saved upload password was encrypted on another machine
+        print(f"Decryption error (re-enter upload password if needed): {e}")
         return ""
