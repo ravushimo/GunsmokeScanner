@@ -41,7 +41,12 @@ def decrypt_password(encrypted_password: str) -> str:
         key = get_encryption_key()
         cipher = Fernet(key)
         return cipher.decrypt(encrypted_password.encode()).decode()
-    except Exception as e:
-        # Common when saved upload password was encrypted on another machine
-        print(f"Decryption error (re-enter upload password if needed): {e}")
+    except Exception:
+        # Common when hostname/MAC changed or config came from another machine.
+        # Do not imply typing into this console - password is entered in the Upload tab.
+        print(
+            "Saved upload password could not be decrypted "
+            "(machine id changed, or config is from another PC). "
+            "Open the Upload tab, enter the password there, and save credentials again."
+        )
         return ""

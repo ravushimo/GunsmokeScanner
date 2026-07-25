@@ -48,19 +48,18 @@ Fonts: IBM Plex Sans bundled under `assets/fonts/`.
 ## Installation (dev)
 
 ```bash
-install_deps.bat
-python main.py
+compile.bat
 ```
 
-Or manually:
+Choose **1) Setup .venv** (default), or run `compile.bat setup`. Then:
 
 ```bash
-pip install -r requirements.txt
-python scripts/ensure_torch.py
-python main.py
+start.bat
 ```
 
-`ensure_torch.py` checks for an NVIDIA GPU (`nvidia-smi`). If present, it installs the CUDA PyTorch wheel; otherwise it keeps CPU torch. **Card model does not matter** (any recent RTX/GTX with drivers uses the same build). At runtime EasyOCR auto-enables GPU when `torch.cuda.is_available()`.
+Or: `.venv\Scripts\python.exe main.py`
+
+Setup installs requirements into `.venv` and runs `ensure_torch.py`, which picks CUDA torch when an NVIDIA GPU is present, otherwise CPU. **Card model does not matter** (any recent RTX/GTX with drivers uses the same build). At runtime EasyOCR auto-enables GPU when `torch.cuda.is_available()`.
 
 Python 3.9+ recommended.
 
@@ -73,19 +72,35 @@ Python 3.9+ recommended.
 
 ## Building
 
+Same entry point:
+
 ```bash
 compile.bat
 ```
 
-Builds **two** onedir releases (torch is baked in, so CPU and CUDA cannot share one folder):
+| Menu | What it does |
+|------|----------------|
+| **1) Setup .venv** | Create/refresh `.venv`, install requirements, pick CPU/CUDA torch |
+| **2) Build for yourself** | PyInstaller using `.venv` (one folder: CPU or CUDA matching your machine) |
+| **3) Build release** | Ship builds from cached `.venv-build-cpu` / `.venv-build-cuda` |
+
+Release submenu: CPU only (default) / CUDA only (NVIDIA) / Both, then optional 7-Zip (default No).
+
+| Env | Purpose |
+|-----|---------|
+| `.venv` | Run from source + "build for yourself" |
+| `.venv-build-cpu` | Cached CPU release toolchain (~1.1 GB) |
+| `.venv-build-cuda` | Cached CUDA release toolchain (~4.7 GB) |
 
 | Output | Notes |
 |--------|--------|
-| `dist/GunsmokeScanner-CPU/` | CPU OCR — smaller, works everywhere |
-| `dist/GunsmokeScanner-CUDA/` | CUDA OCR — needs NVIDIA GPU + drivers |
-| `dist/GunsmokeScanner-*-vX.Y.Z.7z` | 7-Zip archives (if 7-Zip is installed) |
+| `dist/GunsmokeScanner-CPU/` | CPU OCR - smaller, works everywhere |
+| `dist/GunsmokeScanner-CUDA/` | CUDA OCR - needs NVIDIA GPU + drivers |
+| `dist/GunsmokeScanner-*-vX.Y.Z.7z` | Optional; only if you choose Yes and 7-Zip is available |
 
-Requires `.venv`, project deps, and preferably `easyocr_models/`. The script switches the venv between CPU and CUDA torch between the two PyInstaller runs.
+Prefer `easyocr_models/` in the repo root so models are copied into each release. Force-refresh release torch caches: `python scripts/bootstrap_build_venvs.py --force`.
+
+CLI shortcuts: `compile.bat setup` · `compile.bat self` · `compile.bat release`
 
 ## Usage
 
@@ -116,9 +131,9 @@ Requires `.venv`, project deps, and preferably `easyocr_models/`. The script swi
 
 ## Troubleshooting
 
-- **Startup crash** — delete `config.json` and relaunch (defaults regenerate)
-- **Bad OCR** — retune regions; adjust gacha click/settle delays if pages skip
-- **Unsigned exe blocked** — Properties → Unblock on Windows
+- **Startup crash** - delete `config.json` and relaunch (defaults regenerate)
+- **Bad OCR** - retune regions; adjust gacha click/settle delays if pages skip
+- **Unsigned exe blocked** - Properties -> Unblock on Windows
 
 ## License
 
