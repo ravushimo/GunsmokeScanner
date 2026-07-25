@@ -1,8 +1,31 @@
-import cv2
-import numpy as np
-import easyocr
+import os
 import re
-from typing import List, Optional, Tuple
+import time
+from contextlib import contextmanager
+from typing import Callable, List, Optional, Tuple
+from urllib.request import urlretrieve
+from zipfile import ZipFile
+
+import cv2
+import easyocr
+import easyocr.utils as easyocr_utils
+import numpy as np
+
+# filename, bytes downloaded, total bytes (0 if unknown)
+DownloadProgressCB = Callable[[str, int, int], None]
+
+
+def format_byte_size(n: int) -> str:
+    """Human-readable size for download progress (e.g. 512 KB, 28.1 MB)."""
+    n = max(0, int(n))
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.0f} KB"
+    if n < 1024 * 1024 * 1024:
+        mb = n / (1024 * 1024)
+        return f"{mb:.1f} MB" if mb < 10 else f"{mb:.0f} MB"
+    return f"{n / (1024 * 1024 * 1024):.2f} GB"
 
 
 def detect_ocr_device() -> Tuple[bool, str]:
@@ -29,37 +52,108 @@ def detect_ocr_device() -> Tuple[bool, str]:
         return False, f"CPU (torch check failed: {e})"
 
 
+@contextmanager
+def _easyocr_download_progress(on_progress: Optional[DownloadProgressCB]):
+    """Route EasyOCR model downloads through on_progress instead of a console bar.
+
+    EasyOCR binds ``download_and_unzip`` into ``easyocr.easyocr`` at import time,
+    so both that module and ``easyocr.utils`` must be patched.
+    """
+    if on_progress is None:
+        yield
+        return
+
+    import easyocr.easyocr as easyocr_main
+
+    original_utils = easyocr_utils.download_and_unzip
+    original_main = getattr(easyocr_main, "download_and_unzip", original_utils)
+
+    def patched(url, filename, model_storage_directory, verbose=True):
+        zip_path = os.path.join(model_storage_directory, "temp.zip")
+        label = os.path.basename(str(filename)) or "model"
+        last_emit = [0.0]
+        last_bytes = [-1]
+
+        def reporthook(count, block_size, total_size):
+            downloaded = count * block_size
+            if total_size and total_size > 0:
+                downloaded = min(downloaded, total_size)
+            else:
+                total_size = 0
+            now = time.monotonic()
+            # Throttle UI churn; always emit first update and completion.
+            if downloaded != last_bytes[0] and (
+                last_bytes[0] < 0
+                or now - last_emit[0] >= 0.15
+                or (total_size and downloaded >= total_size)
+            ):
+                last_emit[0] = now
+                last_bytes[0] = downloaded
+                on_progress(label, downloaded, total_size)
+
+        # Suppress EasyOCR's terminal progress bar; UI owns progress.
+        urlretrieve(url, zip_path, reporthook=reporthook)
+        with ZipFile(zip_path, "r") as zip_obj:
+            zip_obj.extract(filename, model_storage_directory)
+        os.remove(zip_path)
+        done = last_bytes[0] if last_bytes[0] > 0 else 0
+        on_progress(label, done, done if done else 0)
+
+    easyocr_utils.download_and_unzip = patched
+    easyocr_main.download_and_unzip = patched
+    try:
+        yield
+    finally:
+        easyocr_utils.download_and_unzip = original_utils
+        easyocr_main.download_and_unzip = original_main
+
+
 class OCRProcessor:
-    def __init__(self, languages: List[str] = None):
+    def __init__(
+        self,
+        languages: List[str] = None,
+        on_download_progress: Optional[DownloadProgressCB] = None,
+    ):
         if languages is None:
             languages = ["en"]
         self.languages = list(languages)
         self.use_gpu = False
         self.reader = None
-        self._load_reader(self.languages)
+        self._load_reader(self.languages, on_download_progress=on_download_progress)
 
-    def _load_reader(self, languages: List[str]) -> None:
+    def _load_reader(
+        self,
+        languages: List[str],
+        on_download_progress: Optional[DownloadProgressCB] = None,
+    ) -> None:
         use_gpu, device_label = detect_ocr_device()
         print("Loading EasyOCR models...")
         print(f"EasyOCR languages: {languages}")
         print(f"EasyOCR device: {device_label}")
         self.use_gpu = use_gpu
         self.languages = list(languages)
-        self.reader = easyocr.Reader(
-            self.languages,
-            gpu=use_gpu,
-            model_storage_directory="./easyocr_models",
-        )
+        with _easyocr_download_progress(on_download_progress):
+            self.reader = easyocr.Reader(
+                self.languages,
+                gpu=use_gpu,
+                model_storage_directory="./easyocr_models",
+                # Terminal progress goes to our UI callback when present.
+                verbose=on_download_progress is None,
+            )
         print("EasyOCR ready!")
 
-    def set_languages(self, languages: List[str]) -> None:
+    def set_languages(
+        self,
+        languages: List[str],
+        on_download_progress: Optional[DownloadProgressCB] = None,
+    ) -> None:
         """Rebuild the EasyOCR reader with a new language list (may download models)."""
         langs = [str(x).strip() for x in languages if str(x).strip()]
         if "en" not in langs:
             langs.insert(0, "en")
         if langs == self.languages and self.reader is not None:
             return
-        self._load_reader(langs)
+        self._load_reader(langs, on_download_progress=on_download_progress)
 
     def preprocess_image(
         self, img: np.ndarray, config: dict = None

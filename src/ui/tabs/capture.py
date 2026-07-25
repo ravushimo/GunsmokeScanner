@@ -3,14 +3,17 @@
 import threading
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCursor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -29,8 +32,16 @@ from src.ui.styles import (
     toolbar_frame,
 )
 
-COLUMNS = ("Season", "IGN (Nickname)", "Single High Score", "Total Score")
-FIELD_BY_COLUMN = ("season", "ign", "topscore", "totalscore")
+COLUMNS = ("Rank", "IGN (Nickname)", "Single High Score", "Total Score", "")
+# Display columns that map to editable captured_data fields (Rank and X are UI-only).
+FIELD_BY_COLUMN = {
+    1: "ign",
+    2: "topscore",
+    3: "totalscore",
+}
+_REMOVE_COL = 4
+_REMOVE_WIDTH = 36
+_RANK_WIDTH = 52
 
 
 def _make_label(text: str, font, color: str) -> QLabel:
@@ -79,15 +90,15 @@ class CaptureTab(QWidget):
                 font=self.fonts.ui,
             )
         )
-        btn_row.addWidget(
-            create_button(
-                None,
-                "Set Season",
-                self.set_season_dialog,
-                variant="secondary",
-                font=self.fonts.ui,
-            )
+        self.season_btn = create_button(
+            None,
+            "Set Season",
+            self.set_season_dialog,
+            variant="secondary",
+            font=self.fonts.ui,
         )
+        btn_row.addWidget(self.season_btn)
+        self._update_season_button()
         btn_row.addWidget(
             create_button(
                 None, "Save to CSV", self.save_data, variant="featured", font=self.fonts.ui
@@ -115,14 +126,30 @@ class CaptureTab(QWidget):
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(list(COLUMNS))
         self.table.verticalHeader().setVisible(False)
+        table_font = QFont(self.fonts.body)
+        table_font.setPointSize(self.fonts.body.pointSize() + 2)
+        self.table.setFont(table_font)
+        header_font = QFont(self.fonts.body_medium)
+        header_font.setPointSize(self.fonts.body_medium.pointSize() + 2)
+        self.table.horizontalHeader().setFont(header_font)
         self.table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.EditKeyPressed
         )
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         configure_stretch_table(
-            self.table, stretch=1, min_widths=[80, 250, 120, 120]
+            self.table,
+            stretch=1,
+            min_widths=[_RANK_WIDTH, 250, 120, 120, _REMOVE_WIDTH],
         )
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Fixed
+        )
+        self.table.setColumnWidth(0, _RANK_WIDTH)
+        self.table.horizontalHeader().setSectionResizeMode(
+            _REMOVE_COL, QHeaderView.ResizeMode.Fixed
+        )
+        self.table.setColumnWidth(_REMOVE_COL, _REMOVE_WIDTH)
         self.table.itemChanged.connect(self.on_item_changed)
         outer.addWidget(self.table, stretch=1)
 
@@ -133,6 +160,10 @@ class CaptureTab(QWidget):
         self.status_label.setFixedHeight(28)
         outer.addWidget(self.status_label)
 
+    def _update_season_button(self) -> None:
+        cur = self.season_num if self.season_num is not None else "?"
+        self.season_btn.setText(f"Set Season (Current: {cur})")
+
     def set_season_dialog(self):
         current = self.season_num if self.season_num else 1
         new_season, ok = QInputDialog.getInt(
@@ -142,7 +173,28 @@ class CaptureTab(QWidget):
             self.season_num = new_season
             if hasattr(self.season_manager, "set_manual_season"):
                 self.season_manager.set_manual_season(new_season)
+            self._update_season_button()
             self.status_label.setText(f"Season set to {new_season}")
+
+    def _score_key(self, player: dict) -> tuple:
+        return (
+            int(player.get("totalscore") or 0),
+            int(player.get("topscore") or 0),
+        )
+
+    def _ranked_rows(self) -> list:
+        """Rows sorted by score (best first) with competition ranks (ties share rank)."""
+        ordered = sorted(self.captured_data, key=self._score_key, reverse=True)
+        ranked = []
+        prev_key = None
+        rank = 0
+        for i, player in enumerate(ordered):
+            key = self._score_key(player)
+            if key != prev_key:
+                rank = i + 1
+                prev_key = key
+            ranked.append((rank, player))
+        return ranked
 
     def start_capture_thread(self, _checked=None):
         if self.is_capturing:
@@ -230,10 +282,13 @@ class CaptureTab(QWidget):
 
     def refresh_table(self):
         self.table.blockSignals(True)
-        self.table.setRowCount(len(self.captured_data))
-        for row, player in enumerate(self.captured_data):
+        ranked = self._ranked_rows()
+        # Keep captured_data in display order so row edits / remove map cleanly.
+        self.captured_data = [player for _rank, player in ranked]
+        self.table.setRowCount(len(ranked))
+        for row, (rank, player) in enumerate(ranked):
             values = (
-                str(player["season"]),
+                str(rank),
                 player["ign"],
                 f"{player['topscore']:,}",
                 f"{player['totalscore']:,}",
@@ -242,24 +297,60 @@ class CaptureTab(QWidget):
                 item = QTableWidgetItem(text)
                 if col == 0:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 elif col in (2, 3):
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                else:
                     item.setTextAlignment(
-                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
                     )
                 self.table.setItem(row, col, item)
+
+            remove_btn = QPushButton("X")
+            remove_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            remove_btn.setFixedSize(28, 24)
+            remove_btn.setToolTip("Remove row")
+            remove_btn.setStyleSheet(
+                f"QPushButton {{"
+                f" background-color: {THEME['bg_raised']};"
+                f" color: {THEME['text_strong']};"
+                f" border: 1px solid {THEME['border']};"
+                f" border-radius: 4px;"
+                f" padding: 0px;"
+                f" margin: 0px;"
+                f" font-weight: 700;"
+                f" font-size: 12pt;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f" color: #ffffff;"
+                f" background-color: #a33a3a;"
+                f" border-color: #c04545;"
+                f"}}"
+            )
+            remove_btn.clicked.connect(lambda _=False, r=row: self.remove_row(r))
+            self.table.setCellWidget(row, _REMOVE_COL, remove_btn)
         self.table.blockSignals(False)
+
+    def remove_row(self, row: int) -> None:
+        if row < 0 or row >= len(self.captured_data):
+            return
+        self.captured_data.pop(row)
+        self.refresh_table()
+        self.stats_label.setText(
+            f"Total Players: {len(self.captured_data)} | Captures: {self.capture_count}"
+        )
 
     def on_item_changed(self, item: QTableWidgetItem):
         """Native QTableWidget in-place editing replaces the old Tk cell-overlay hack."""
         row = item.row()
         col = item.column()
-        if row >= len(self.captured_data):
+        field = FIELD_BY_COLUMN.get(col)
+        if field is None or row >= len(self.captured_data):
             return
 
-        field = FIELD_BY_COLUMN[col]
         new_val = item.text()
         try:
-            if field in ("season", "topscore", "totalscore"):
+            if field in ("topscore", "totalscore"):
                 val = int(new_val.replace(",", ""))
             else:
                 val = new_val

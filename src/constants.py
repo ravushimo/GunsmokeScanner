@@ -172,4 +172,4 @@ INVENTORY_GROWTH_REGIONS = (
     "own_count",
 )
 
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2-dev"

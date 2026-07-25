@@ -348,12 +348,35 @@ class SettingsTab(QWidget):
         self._applying_langs = True
         self.apply_langs_btn.setEnabled(False)
         self.apply_langs_btn.setText("Loading models...")
-        self.update_status.setText("")
+        self.active_langs_lbl.setText("Preparing EasyOCR models...")
 
         def work():
             err = None
             try:
-                self.ocr_processor.set_languages(langs)
+                def on_dl(name: str, downloaded: int, total: int) -> None:
+                    from src.core.ocr import format_byte_size
+
+                    if total > 0:
+                        text = (
+                            f"Downloading {name}... "
+                            f"{format_byte_size(downloaded)} / {format_byte_size(total)}"
+                        )
+                        short = (
+                            f"{format_byte_size(downloaded)} / {format_byte_size(total)}"
+                        )
+                    else:
+                        text = f"Downloading {name}... {format_byte_size(downloaded)}"
+                        short = format_byte_size(downloaded)
+
+                    def ui():
+                        self.active_langs_lbl.setText(text)
+                        self.apply_langs_btn.setText(short)
+
+                    call_soon(ui)
+
+                self.ocr_processor.set_languages(
+                    langs, on_download_progress=on_dl
+                )
                 self.config_manager.set_ocr_languages(langs)
             except Exception as e:
                 err = str(e)

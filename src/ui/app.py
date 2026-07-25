@@ -105,12 +105,29 @@ class GunsmokeApp:
 
         langs = self.config_manager.get_ocr_languages()
         lang_label = ", ".join(langs)
-        status(
-            40,
-            f"Loading EasyOCR ({lang_label})...\n"
-            "First launch may download model files.",
+        status(40, f"Loading EasyOCR ({lang_label})...")
+        splash.set_busy(True)
+
+        def on_ocr_download(name: str, downloaded: int, total: int) -> None:
+            from src.core.ocr import format_byte_size
+
+            # Map file download into the EasyOCR boot slice (~40-68).
+            if total > 0:
+                pct = min(100, int(downloaded * 100 / total))
+                mapped = 40 + int(pct * 0.28)
+                msg = (
+                    f"Downloading {name}... "
+                    f"{format_byte_size(downloaded)} / {format_byte_size(total)}"
+                )
+            else:
+                mapped = 40
+                msg = f"Downloading {name}... {format_byte_size(downloaded)}"
+            status(mapped, msg)
+
+        self.ocr_processor = OCRProcessor(
+            langs, on_download_progress=on_ocr_download
         )
-        self.ocr_processor = OCRProcessor(langs)
+        splash.set_busy(False)
 
         status(70, "Building interface...")
         self.root = _MainWindow(self)

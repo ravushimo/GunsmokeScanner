@@ -108,12 +108,12 @@ class StartupSplash(QWidget):
         )
         lay.addWidget(self.bar)
 
-        hint = QLabel("First launch may download EasyOCR models.")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet(
+        self.hint = QLabel("First launch may download EasyOCR models.")
+        self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint.setStyleSheet(
             f"color: {THEME['text_muted']}; background: transparent; font-size: 8pt;"
         )
-        lay.addWidget(hint)
+        lay.addWidget(self.hint)
 
     def show_centered(self) -> None:
         screen = QApplication.primaryScreen()
@@ -127,7 +127,17 @@ class StartupSplash(QWidget):
         self.raise_()
         QApplication.processEvents()
 
+    def set_busy(self, busy: bool) -> None:
+        """Indeterminate bar while waiting (e.g. loading models already on disk)."""
+        if busy:
+            self.bar.setRange(0, 0)
+        else:
+            self.bar.setRange(0, 100)
+        QApplication.processEvents()
+
     def set_progress(self, percent: int, message: str) -> None:
+        if self.bar.minimum() == 0 and self.bar.maximum() == 0:
+            self.bar.setRange(0, 100)
         self.bar.setValue(max(0, min(100, int(percent))))
         self.status.setText(message)
         QApplication.processEvents()

@@ -33,21 +33,20 @@ class UpdateChecker:
 
     def is_newer(self, remote_ver: str, local_ver: str) -> bool:
         """
-        Compare two version strings (e.g. 'v1.2.0' vs 'v1.1.0')
+        Compare two version strings (e.g. 'v1.2.0' vs 'v1.1.0').
+        Pre-release suffixes like '-dev' / '-beta' are ignored for ordering.
         Returns True if remote_ver > local_ver
         """
         try:
-            # Strip 'v' prefix and split by '.'
-            r_parts = [int(p) for p in remote_ver.lstrip("v").split(".")]
-            l_parts = [int(p) for p in local_ver.lstrip("v").split(".")]
-
-            # Pad with zeros if lengths differ (e.g. 1.2 vs 1.2.1)
-            length = max(len(r_parts), len(l_parts))
-            r_parts.extend([0] * (length - len(r_parts)))
-            l_parts.extend([0] * (length - len(l_parts)))
-
-            return r_parts > l_parts
+            return self._version_parts(remote_ver) > self._version_parts(local_ver)
         except ValueError:
-            # Fallback for non-semver tags: just strictly not equal?
-            # Or safer to return False to avoid loop? Let's return False if parse fails.
             return False
+
+    @staticmethod
+    def _version_parts(ver: str) -> list:
+        base = ver.lstrip("v").split("-", 1)[0].split("+", 1)[0]
+        parts = [int(p) for p in base.split(".") if p != ""]
+        # Pad so 1.2 compares cleanly with 1.2.0
+        while len(parts) < 3:
+            parts.append(0)
+        return parts
