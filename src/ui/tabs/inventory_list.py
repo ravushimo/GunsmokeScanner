@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+import csv
+from datetime import datetime
+from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
-from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
 from src.constants import THEME, class_tag, configure_class_tags
 from src.data.inventory_db import InventoryDB
 from src.ui.styles import create_button
+
+_CSV_FIELDS = (
+    "core_type",
+    "quantity",
+    "perk1_name",
+    "perk1_lvl",
+    "perk2_name",
+    "perk2_level",
+    "perk3_name",
+    "perk3_level",
+)
 
 
 class InventoryListTab(ctk.CTkFrame):
@@ -59,6 +72,13 @@ class InventoryListTab(ctk.CTkFrame):
         ).pack(side=tk.LEFT, padx=8)
         create_button(
             filters, "Refresh", self.refresh, variant="ghost", font=self.fonts.ui
+        ).pack(side=tk.LEFT, padx=4)
+        create_button(
+            filters,
+            "Export CSV",
+            self.export_csv,
+            variant="secondary",
+            font=self.fonts.ui,
         ).pack(side=tk.LEFT, padx=4)
         create_button(
             filters,
@@ -176,6 +196,51 @@ class InventoryListTab(ctk.CTkFrame):
         self.refresh()
         if self.on_change:
             self.on_change()
+
+    def export_csv(self):
+        t = self.type_var.get()
+        cores = self.db.list_cores(core_type=None if t == "All" else t)
+        if not cores:
+            messagebox.showinfo("Export", "No cores to export for the current filter.")
+            return
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = filedialog.asksaveasfilename(
+            title="Export Growth Data CSV",
+            defaultextension=".csv",
+            initialfile=f"growth_cores_{stamp}.csv",
+            filetypes=[("CSV", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(
+                    f,
+                    fieldnames=_CSV_FIELDS,
+                    delimiter=";",
+                    lineterminator="\n",
+                )
+                writer.writeheader()
+                for c in cores:
+                    writer.writerow(
+                        {
+                            "core_type": c.get("type") or "",
+                            "quantity": int(c.get("quantity") or 1),
+                            "perk1_name": c.get("perk1_name") or "",
+                            "perk1_lvl": c.get("perk1_level") if c.get("perk1_name") else "",
+                            "perk2_name": c.get("perk2_name") or "",
+                            "perk2_level": c.get("perk2_level") if c.get("perk2_name") else "",
+                            "perk3_name": c.get("perk3_name") or "",
+                            "perk3_level": c.get("perk3_level") if c.get("perk3_name") else "",
+                        }
+                    )
+        except OSError as e:
+            messagebox.showerror("Export failed", str(e))
+            return
+        messagebox.showinfo(
+            "Export",
+            f"Wrote {len(cores)} row(s) to:\n{path}",
+        )
 
     def clear_all(self):
         if not messagebox.askyesno(
