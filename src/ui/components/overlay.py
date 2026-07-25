@@ -2,6 +2,10 @@
 
 Each region is a frameless, semi-transparent PySide6 QWidget that stays
 above other windows and supports click-drag plus edge resize.
+
+Config bboxes are physical screen pixels (same as ImageGrab / layouts).
+Qt widget geometry and mouse events use logical pixels; this module
+converts at the boundary so overlays and OCR stay aligned under DPI scaling.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from src.constants import (
     INVENTORY_GROWTH_REGIONS,
     THEME,
 )
+from src.ui.qt_util import logical_delta_to_physical, physical_to_logical_bbox
 
 GUNSMOKE_COLUMNS = ("nickname", "single_high", "total_score")
 
@@ -274,7 +279,8 @@ class OverlayManager:
         self.selected = prev_selected
 
         for row_idx, col_name, bbox in self._iter_regions():
-            x, y, w, h = bbox
+            # Config is physical (ImageGrab); Qt geometry is logical.
+            x, y, w, h = physical_to_logical_bbox(bbox)
             color = COLUMN_COLORS.get(col_name, THEME["text_strong"])
 
             if row_idx is None:
@@ -365,7 +371,8 @@ class OverlayManager:
 
     def _set_bbox(self, row_idx, col_name, bbox):
         container, key, _ = self._get_bbox_ref(row_idx, col_name)
-        container[key] = bbox
+        # Whole pixels only - drag deltas / DPI math must not leak floats into config.
+        container[key] = [int(round(float(v))) for v in bbox[:4]]
 
     def _targets_for_move(self, row_idx, col_name):
         """Regions that should move together under the current lock mode."""
@@ -395,7 +402,7 @@ class OverlayManager:
                 _, _, bbox = self._get_bbox_ref(overlay.row_idx, overlay.col_name)
             except Exception:
                 continue
-            x, y, w, h = bbox
+            x, y, w, h = physical_to_logical_bbox(bbox)
             overlay.setGeometry(x, y, w, h)
         self._update_selection_visual()
 
@@ -427,10 +434,12 @@ class OverlayManager:
             return
 
         gx, gy = _event_global_xy(event)
-        dx = gx - self.drag_start[0]
-        dy = gy - self.drag_start[1]
+        # Mouse deltas are Qt logical; config stores physical pixels.
+        dx_log = gx - self.drag_start[0]
+        dy_log = gy - self.drag_start[1]
+        dx, dy = logical_delta_to_physical(dx_log, dy_log)
 
-        if abs(dx) > 2 or abs(dy) > 2:
+        if abs(dx_log) > 2 or abs(dy_log) > 2:
             overlay.drag_moved = True
 
         _, _, bbox = self._get_bbox_ref(overlay.row_idx, overlay.col_name)
@@ -446,7 +455,10 @@ class OverlayManager:
                 overlay.row_idx, overlay.col_name, [new_x, new_y, new_w, new_h]
             )
             # Resize applies to the active region only (use Fill others for W/H)
-            overlay.setGeometry(new_x, new_y, new_w, new_h)
+            lx, ly, lw, lh = physical_to_logical_bbox(
+                [new_x, new_y, new_w, new_h]
+            )
+            overlay.setGeometry(lx, ly, lw, lh)
         else:
             self._apply_delta(overlay.row_idx, overlay.col_name, dx, dy)
             self.sync_geometries()
