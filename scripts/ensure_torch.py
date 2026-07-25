@@ -12,6 +12,7 @@ module stays cached in sys.modules. Always probe via a fresh subprocess.
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 
@@ -104,7 +105,7 @@ def install_cpu_torch() -> int:
 
 
 def install_cuda_torch() -> int:
-    print(f"NVIDIA GPU detected - installing torch {TORCH_VER} (CUDA) ...")
+    print(f"Installing torch {TORCH_VER} (CUDA) ...")
     _uninstall_torch()
     last_code = 1
     for tag, index in CUDA_CANDIDATES:
@@ -137,11 +138,70 @@ def install_cuda_torch() -> int:
     return last_code
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Install CPU or CUDA PyTorch into the current environment"
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--cpu",
+        action="store_true",
+        help="Force CPU torch wheels (smaller; works everywhere)",
+    )
+    group.add_argument(
+        "--cuda",
+        action="store_true",
+        help="Force CUDA torch wheels (NVIDIA GPU; much larger)",
+    )
+    args = parser.parse_args(argv)
+
     nvidia = has_nvidia_gpu()
     version, cuda_ok = torch_status()
     print(f"nvidia-smi: {'yes' if nvidia else 'no'}")
     print(f"torch: {version or '(not installed)'}  cuda_available={cuda_ok}")
+
+    if args.cpu:
+        print("Forced CPU install (--cpu).")
+        if version and "+cpu" in version.lower() and not cuda_ok:
+            print(f"Already on CPU torch {version}")
+            return 0
+        code = install_cpu_torch()
+        version, cuda_ok = torch_status()
+        print(f"CPU torch: {version or '(missing)'} cuda_available={cuda_ok}")
+        return 0 if version else (code or 1)
+
+    if args.cuda:
+        print("Forced CUDA install (--cuda).")
+        if not nvidia:
+            print(
+                "WARNING: nvidia-smi not found. CUDA wheels can still install, "
+                "but GPU OCR will not work until drivers are available."
+            )
+        if cuda_ok and _is_cuda_wheel(version):
+            print(f"Already on CUDA torch {version}")
+            return 0
+        code = install_cuda_torch()
+        version, cuda_ok = torch_status()
+        print(
+            f"After CUDA install: torch={version or '(missing)'} "
+            f"cuda_available={cuda_ok}"
+        )
+        if _is_cuda_wheel(version):
+            if cuda_ok:
+                r = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import torch; print(torch.cuda.get_device_name(0))",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                print(f"Using GPU: {r.stdout.strip() or '(unknown)'}")
+            return 0
+        print("CUDA install failed.")
+        return code or 1
 
     if not nvidia:
         print("No NVIDIA GPU - ensuring CPU torch.")
@@ -206,7 +266,7 @@ def main() -> int:
         return cpu_code or code or 1
     print(
         "App will run on CPU. Update NVIDIA drivers and re-run "
-        "python scripts/ensure_torch.py to retry CUDA."
+        "python scripts/ensure_torch.py --cuda to retry CUDA."
     )
     return 0
 

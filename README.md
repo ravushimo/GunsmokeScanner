@@ -59,7 +59,12 @@ Fonts: IBM Plex Sans bundled under `assets/fonts/`.
 setup.bat
 ```
 
-Choose **1) Install dependencies** (recommended / default), or run `setup.bat setup`. Then:
+Choose **1) Install dependencies** (recommended / default), or run `setup.bat setup`. You will be asked:
+
+- **CPU** (~1 GB torch stack) - default; works everywhere
+- **CUDA** (~4-5 GB) - NVIDIA GPU OCR
+
+Then:
 
 ```bash
 start.bat
@@ -67,7 +72,7 @@ start.bat
 
 Or: `.venv\Scripts\python.exe main.py`
 
-Setup installs requirements into `.venv` and runs `ensure_torch.py`, which picks CUDA torch when an NVIDIA GPU is present, otherwise CPU. **Card model does not matter** (any recent RTX/GTX with drivers uses the same build). At runtime EasyOCR auto-enables GPU when `torch.cuda.is_available()`.
+At runtime EasyOCR uses GPU automatically when the installed torch build has CUDA and a GPU is visible. **Card model does not matter** for the CUDA wheel (any recent RTX/GTX with drivers).
 
 Python 3.9+ recommended.
 
@@ -90,9 +95,9 @@ setup.bat
 
 | Menu | What it does |
 |------|----------------|
-| **1) Install dependencies** | Recommended first step. Create/refresh `.venv`, install requirements, pick CPU/CUDA torch |
-| **2) Build exe** | PyInstaller using `.venv` from option 1. CPU or CUDA is chosen automatically from that torch install. Requires option 1 first. |
-| **3) Build release** | Developers: ship builds from cached `.venv-build-cpu` / `.venv-build-cuda` so wheels are not redownloaded each time |
+| **1) Install dependencies** | Create/refresh `.venv`, install requirements, then choose **CPU** (~1 GB) or **CUDA** (~4-5 GB) torch |
+| **2) Build exe from .venv** | PyInstaller using `.venv` from option 1 - output is CPU or CUDA matching that install |
+| **3) Build release** | Developers: cached `.venv-build-cpu` / `.venv-build-cuda` so wheels are not redownloaded each time |
 
 Release submenu: CPU only (default) / CUDA only (NVIDIA) / Both, then optional 7-Zip (default No).
 

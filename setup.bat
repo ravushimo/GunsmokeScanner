@@ -19,14 +19,14 @@ echo.
 echo What do you want to do?
 echo.
 echo   1^) Install dependencies  [recommended / default]
-echo        Creates .venv, installs Python packages, picks CPU or CUDA
-echo        PyTorch for this machine. Run this first. Then use start.bat
-echo        to launch from source.
+echo        Creates .venv and installs Python packages.
+echo        You choose CPU PyTorch ^(smaller^) or CUDA ^(NVIDIA, larger^).
+echo        Then use start.bat to launch from source.
 echo.
-echo   2^) Build exe ^(CPU or CUDA auto^)
-echo        Packages a folder under dist\ using your .venv from option 1.
-echo        Picks CPU or CUDA automatically from what option 1 installed.
-echo        Requires option 1 to have been run successfully first.
+echo   2^) Build exe from .venv
+echo        Packages dist\ from your .venv ^(option 1^).
+echo        Result is CPU or CUDA matching whatever torch option 1 installed.
+echo        Requires option 1 first.
 echo.
 echo   3^) Build release ^(developers^)
 echo        Uses separate cached venvs ^(.venv-build-cpu / .venv-build-cuda^)
@@ -52,13 +52,50 @@ echo  Install dependencies
 echo ========================================
 call :ensure_host_python
 if errorlevel 1 goto :die
+call :ask_torch_variant
+if errorlevel 1 goto :die
 call :ensure_dev_venv
 if errorlevel 1 goto :die
 echo.
 echo Done. Next steps:
 echo   - Run start.bat  to launch from source
 echo   - Or run setup.bat again and choose 2 to build an exe
+echo     ^(will be %TORCH_LABEL% matching this .venv^)
 goto :ok
+
+REM ============================================================
+:ask_torch_variant
+echo.
+echo Which PyTorch build for .venv?
+echo.
+echo   1^) CPU  [default]
+echo        Smaller install - works on any PC. OCR runs on CPU.
+echo        Disk for torch stack: roughly ~1 GB.
+echo.
+echo   2^) CUDA / GPU  ^(NVIDIA only^)
+echo        Faster OCR when an NVIDIA GPU + drivers are present.
+echo        Disk for torch stack: roughly ~4-5 GB.
+echo.
+:ask_torch_prompt
+set "TORCH_CHOICE="
+set /p "TORCH_CHOICE=Choice [1/2] (default 1): "
+if "%TORCH_CHOICE%"=="" set "TORCH_CHOICE=1"
+set "TORCH_CHOICE=%TORCH_CHOICE:~0,1%"
+set "TORCH_ARGS="
+set "TORCH_LABEL=CPU"
+if "%TORCH_CHOICE%"=="1" set "TORCH_ARGS=--cpu"
+if "%TORCH_CHOICE%"=="1" set "TORCH_LABEL=CPU"
+if "%TORCH_CHOICE%"=="1" goto ask_torch_done
+if "%TORCH_CHOICE%"=="2" set "TORCH_ARGS=--cuda"
+if "%TORCH_CHOICE%"=="2" set "TORCH_LABEL=CUDA"
+if "%TORCH_CHOICE%"=="2" goto ask_torch_done
+echo Invalid choice. Please enter 1 or 2.
+echo.
+goto ask_torch_prompt
+:ask_torch_done
+echo Selected: %TORCH_LABEL% PyTorch
+echo.
+exit /b 0
 
 REM ============================================================
 :mode_self
@@ -82,13 +119,14 @@ if errorlevel 1 (
 for /f "usebackq delims=" %%i in (`"%VENV_PY%" -c "from src.constants import APP_VERSION; print(APP_VERSION)"`) do set "APP_VER=%%i"
 if not defined APP_VER set "APP_VER=dev"
 
-REM Name the folder from whatever torch is in .venv
+REM Name the folder from whatever torch is in .venv (from option 1)
 set "SELF_VARIANT=CPU"
 "%VENV_PY%" -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)"
 if not errorlevel 1 set "SELF_VARIANT=CUDA"
 
 echo App version: %APP_VER%
-echo Using .venv torch as %SELF_VARIANT% build
+echo .venv torch -^> %SELF_VARIANT% build
+echo ^(Re-run option 1 and pick the other torch if you want the other variant.^)
 echo.
 
 call :ask_7zip
@@ -241,13 +279,13 @@ if errorlevel 1 (
   echo ERROR: pip install failed.
   exit /b 1
 )
-echo Selecting CPU vs CUDA PyTorch for .venv ...
-"%VENV_PY%" scripts\ensure_torch.py
+echo Selecting PyTorch for .venv ^(%TORCH_LABEL%^) ...
+"%VENV_PY%" scripts\ensure_torch.py %TORCH_ARGS%
 if errorlevel 1 (
   echo ERROR: Torch setup failed.
   exit /b 1
 )
-echo .venv ready.
+echo .venv ready ^(%TORCH_LABEL%^).
 exit /b 0
 
 REM ============================================================
