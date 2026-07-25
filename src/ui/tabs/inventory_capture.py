@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from src.constants import THEME
+from src.constants import CLASS_COLORS, THEME, class_tag, configure_class_tags
 from src.core.growth_scanner import GrowthScanner
 from src.data.inventory_db import InventoryDB
 from src.ui.styles import create_button
+
+_LOG_TYPE_RE = re.compile(
+    r"\[(" + "|".join(re.escape(t) for t in CLASS_COLORS) + r")\]"
+)
 
 
 class InventoryCaptureTab(ctk.CTkFrame):
@@ -142,6 +147,7 @@ class InventoryCaptureTab(ctk.CTkFrame):
         log_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 12))
         self.log = ctk.CTkTextbox(log_frame, font=self.fonts.caption)
         self.log.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        configure_class_tags(self.log)
 
         table = ctk.CTkFrame(
             self,
@@ -162,6 +168,7 @@ class InventoryCaptureTab(ctk.CTkFrame):
         ):
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor=tk.W if c != "Qty" else tk.CENTER)
+        configure_class_tags(self.tree)
         sb = ctk.CTkScrollbar(table, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4, pady=4)
@@ -206,8 +213,16 @@ class InventoryCaptureTab(ctk.CTkFrame):
         self.log.delete("1.0", tk.END)
 
     def _append_log(self, msg: str):
-        # Newest lines on top so issues are visible without scrolling
-        self.log.insert("1.0", msg + "\n")
+        # Newest lines on top; color [Bulwark]/[Sentinel]/… with class hues
+        self.log.insert("1.0", "\n")
+        m = _LOG_TYPE_RE.search(msg)
+        if m:
+            before, typ, after = msg[: m.start()], m.group(1), msg[m.end() :]
+            self.log.insert("1.0", after)
+            self.log.insert("1.0", f"[{typ}]", class_tag(typ))
+            self.log.insert("1.0", before)
+        else:
+            self.log.insert("1.0", msg)
         self.log.see("1.0")
 
     def _status(self, msg: str):
@@ -218,14 +233,17 @@ class InventoryCaptureTab(ctk.CTkFrame):
             perks = ", ".join(
                 f"{p['name']} Lv.{p['level']}" for p in core.get("perks") or []
             )
+            ctype = core.get("type")
+            tag = class_tag(ctype)
             self.tree.insert(
                 "",
                 0,
                 values=(
-                    core.get("type"),
+                    ctype,
                     perks,
                     core.get("quantity", 1),
                 ),
+                tags=(tag,) if tag else (),
             )
             self.session_cores.append(core)
             self._refresh_stats()

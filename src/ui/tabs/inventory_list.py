@@ -7,7 +7,7 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from src.constants import THEME
+from src.constants import THEME, class_tag, configure_class_tags
 from src.data.inventory_db import InventoryDB
 from src.ui.styles import create_button
 
@@ -91,6 +91,7 @@ class InventoryListTab(ctk.CTkFrame):
         for c in cols:
             self.tree.heading(c, text=c)
             self.tree.column(c, width=widths[c], anchor=tk.CENTER if c in ("id", "Qty") else tk.W)
+        configure_class_tags(self.tree)
         sb = ctk.CTkScrollbar(table, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4, pady=4)
@@ -123,6 +124,7 @@ class InventoryListTab(ctk.CTkFrame):
                 if c.get("perk3_name")
                 else ""
             )
+            tag = class_tag(c.get("type"))
             self.tree.insert(
                 "",
                 tk.END,
@@ -134,6 +136,7 @@ class InventoryListTab(ctk.CTkFrame):
                     p3,
                     c["quantity"],
                 ),
+                tags=(tag,) if tag else (),
             )
         self.summary.configure(
             text=(

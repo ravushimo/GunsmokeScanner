@@ -17,6 +17,19 @@ BANNER_ORDER = (
     "Standard",
 )
 
+def _blend(hex_a: str, hex_b: str, t: float) -> str:
+    def _rgb(h: str):
+        h = h.lstrip("#")
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    ar, ag, ab = _rgb(hex_a)
+    br, bg, bb = _rgb(hex_b)
+    return (
+        f"#{int(round(ar + (br - ar) * t)):02x}"
+        f"{int(round(ag + (bg - ag) * t)):02x}"
+        f"{int(round(ab + (bb - ab) * t)):02x}"
+    )
+
 
 class GachaHistoryTab(ctk.CTkFrame):
     # Cap rows drawn in the tree — pity still uses full timeline
@@ -49,7 +62,7 @@ class GachaHistoryTab(ctk.CTkFrame):
             fg_color=THEME["bg_surface"],
             corner_radius=6,
             border_width=1,
-            border_color=THEME["border"],
+            border_color=_blend(THEME["border"], THEME["element_freeze"], 0.35),
         )
         filter_frame.pack(fill=tk.X, padx=12, pady=(8, 6))
 
@@ -66,12 +79,13 @@ class GachaHistoryTab(ctk.CTkFrame):
             g_source,
             variable=self.source_var,
             values=["All"],
-            width=160,
+            width=148,
+            height=28,
             font=self.fonts.body,
             command=lambda _v: self.refresh(),
         )
         self.source_menu.pack(side=tk.LEFT, padx=(6, 0))
-        g_source.pack(side=tk.LEFT, padx=(0, 12))
+        g_source.pack(side=tk.LEFT, padx=(0, 10))
 
         # Type
         g_type = self._filter_group(row_filters, "Type:")
@@ -80,11 +94,12 @@ class GachaHistoryTab(ctk.CTkFrame):
             g_type,
             variable=self.type_var,
             values=["All", "Doll", "Weapons"],
-            width=100,
+            width=90,
+            height=28,
             font=self.fonts.body,
             command=lambda _v: self.refresh(),
         ).pack(side=tk.LEFT, padx=(6, 0))
-        g_type.pack(side=tk.LEFT, padx=(0, 12))
+        g_type.pack(side=tk.LEFT, padx=(0, 10))
 
         # Rarity
         g_rarity = self._filter_group(row_filters, "Rarity:")
@@ -93,33 +108,44 @@ class GachaHistoryTab(ctk.CTkFrame):
             g_rarity,
             variable=self.rarity_var,
             values=["All", "Elite", "Standard", "Retired"],
-            width=100,
+            width=96,
+            height=28,
             font=self.fonts.body,
             command=lambda _v: self.refresh(),
-        ).pack(side=tk.LEFT, padx=(0, 0))
+        ).pack(side=tk.LEFT, padx=(6, 0))
         g_rarity.pack(side=tk.LEFT, padx=(0, 4))
 
-        # Dates + buttons on second row
-        g_from = self._filter_group(row_actions, "From:")
+        # Dates (label is the placeholder) + compact action buttons
         self.from_picker = DatePickerField(
-            g_from, self.fonts, width=110, on_change=self.refresh
+            row_actions,
+            self.fonts,
+            width=100,
+            placeholder="From date",
+            on_change=self.refresh,
         )
-        self.from_picker.pack(side=tk.LEFT, padx=(6, 0))
-        g_from.pack(side=tk.LEFT, padx=(0, 10))
+        self.from_picker.pack(side=tk.LEFT, padx=(0, 6))
 
-        g_to = self._filter_group(row_actions, "To:")
         self.to_picker = DatePickerField(
-            g_to, self.fonts, width=110, on_change=self.refresh
+            row_actions,
+            self.fonts,
+            width=100,
+            placeholder="To date",
+            on_change=self.refresh,
         )
-        self.to_picker.pack(side=tk.LEFT, padx=(6, 0))
-        g_to.pack(side=tk.LEFT, padx=(0, 12))
+        self.to_picker.pack(side=tk.LEFT, padx=(0, 8))
 
+        # Fixed compact widths — CTk default is 140 and crowds out Clear History
         create_button(
             row_actions,
             "Refresh",
             self.refresh,
             variant="secondary",
             font=self.fonts.ui,
+            width=72,
+            height=28,
+            fg_color=THEME["class_support"],
+            hover_color=_blend(THEME["class_support"], "#ffffff", 0.12),
+            text_color="#ffffff",
         ).pack(side=tk.LEFT, padx=(0, 4))
         create_button(
             row_actions,
@@ -127,6 +153,11 @@ class GachaHistoryTab(ctk.CTkFrame):
             self.fix_names,
             variant="secondary",
             font=self.fonts.ui,
+            width=84,
+            height=28,
+            fg_color=THEME["class_bulwark"],
+            hover_color=_blend(THEME["class_bulwark"], "#ffffff", 0.12),
+            text_color="#ffffff",
         ).pack(side=tk.LEFT, padx=(0, 4))
         create_button(
             row_actions,
@@ -134,6 +165,10 @@ class GachaHistoryTab(ctk.CTkFrame):
             self.clear_db,
             variant="ghost",
             font=self.fonts.ui,
+            width=104,
+            height=28,
+            border_color=_blend(THEME["border"], THEME["element_omni"], 0.55),
+            text_color=THEME["element_omni"],
         ).pack(side=tk.LEFT)
 
         table_container = ctk.CTkFrame(
@@ -170,13 +205,13 @@ class GachaHistoryTab(ctk.CTkFrame):
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4, pady=4)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 4), pady=4)
 
-        self.tree.tag_configure("elite", foreground="#C48A1A")
-        self.tree.tag_configure("standard", foreground="#8A55C6")
-        self.tree.tag_configure("retired", foreground=THEME["text_muted"])
-        self.tree.tag_configure("gold", foreground="#C48A1A")
-        self.tree.tag_configure("purple", foreground="#8A55C6")
-        self.tree.tag_configure("common", foreground=THEME["text_muted"])
-        self.tree.tag_configure("pity_high", foreground=THEME["danger"])
+        self.tree.tag_configure("elite", foreground=THEME["element_electric"])
+        self.tree.tag_configure("standard", foreground=THEME["class_vanguard"])
+        self.tree.tag_configure("retired", foreground=THEME["element_physical"])
+        self.tree.tag_configure("gold", foreground=THEME["element_electric"])
+        self.tree.tag_configure("purple", foreground=THEME["class_vanguard"])
+        self.tree.tag_configure("common", foreground=THEME["element_physical"])
+        self.tree.tag_configure("pity_high", foreground=THEME["element_omni"])
 
         # Bottom stats panel
         stats_frame = ctk.CTkFrame(
@@ -192,7 +227,7 @@ class GachaHistoryTab(ctk.CTkFrame):
             stats_frame,
             text="Stats",
             font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
+            text_color=THEME["element_freeze"],
             fg_color="transparent",
         ).pack(anchor=tk.W, padx=15, pady=(12, 4))
 
@@ -222,7 +257,7 @@ class GachaHistoryTab(ctk.CTkFrame):
             stats_frame,
             text="",
             font=self.fonts.body_medium,
-            text_color=THEME["text_strong"],
+            text_color=THEME["element_burn"],
             fg_color="transparent",
             anchor=tk.W,
             justify=tk.LEFT,
@@ -473,8 +508,9 @@ class GachaHistoryTab(ctk.CTkFrame):
     def clear_db(self):
         if not messagebox.askyesno(
             "Clear History",
-            "Delete ALL saved gacha pulls from the local database?\n"
-            "This cannot be undone.",
+            "This will permanently delete ALL saved gacha pulls from the local database.\n\n"
+            "This data cannot be recovered. Continue?",
+            icon="warning",
         ):
             return
         self.db.clear_all()

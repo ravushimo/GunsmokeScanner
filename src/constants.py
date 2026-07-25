@@ -5,6 +5,10 @@ semantic names as `.docs/DESIGN.md`, remapped for the dark default theme.
 PostHog Orange / Amber Gold remain hover accents.
 """
 
+from __future__ import annotations
+
+from typing import Optional
+
 THEME = {
     # Surfaces (gunsmoke.app dark)
     "bg_canvas": "#1c1d1a",
@@ -32,12 +36,56 @@ THEME = {
     "success": "#6ee7b7",
     "warning": "#fbbf24",
     "danger": "#fca5a5",
-    # GFL2 class colors - overlay color coding
+    # GFL2 class colors (DESIGN.md — class / growth / perk fills)
     "class_sentinel": "#BD5849",
     "class_vanguard": "#8A55C6",
     "class_bulwark": "#4572C9",
     "class_support": "#4B7E5B",
+    # GFL2 type / affinity colors (DESIGN.md — element badges)
+    "element_burn": "#FF6600",
+    "element_corrosion": "#8E66D1",
+    "element_electric": "#FFD700",
+    "element_freeze": "#4AC9E3",
+    "element_hydro": "#0088CC",
+    "element_physical": "#A0A0A0",
+    "element_omni": "#E03131",
 }
+
+# DESIGN.md § GFL2 Specific Colors — class / growth / perk types
+CLASS_COLORS = {
+    "Sentinel": THEME["class_sentinel"],
+    "Vanguard": THEME["class_vanguard"],
+    "Bulwark": THEME["class_bulwark"],
+    "Support": THEME["class_support"],
+}
+
+
+def class_color(core_type: Optional[str]) -> str:
+    """Hex for a Growth Data / perk class type, or primary text if unknown."""
+    if not core_type:
+        return THEME["text_primary"]
+    return CLASS_COLORS.get(str(core_type).strip(), THEME["text_primary"])
+
+
+def class_tag(core_type: Optional[str]) -> str:
+    """Treeview / Text tag name for a class type (e.g. class_Bulwark)."""
+    key = str(core_type or "").strip()
+    return f"class_{key}" if key in CLASS_COLORS else ""
+
+
+def configure_class_tags(widget) -> None:
+    """Apply GFL2 class foreground colors as tags on a Treeview or Text widget."""
+    from tkinter import ttk
+
+    for name, color in CLASS_COLORS.items():
+        tag = f"class_{name}"
+        if isinstance(widget, ttk.Treeview):
+            widget.tag_configure(tag, foreground=color)
+        elif hasattr(widget, "tag_config"):
+            widget.tag_config(tag, foreground=color)
+        else:
+            widget.tag_configure(tag, foreground=color)
+
 
 SITE_URL = "https://gunsmoke.app/frontpage"
 GITHUB_REPO = "ravushimo/GunsmokeScanner"

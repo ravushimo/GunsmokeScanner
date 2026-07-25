@@ -404,22 +404,28 @@ def compute_campaigns(annotated_oldest_first: List[Dict[str, Any]]) -> List[Dict
 
 
 def _streak_stats(outcomes: List[str], kind: str) -> Dict[str, int]:
-    """Longest and current streak for win or loss (guaranteed breaks streaks)."""
+    """Longest and current streak for win or loss.
+
+    Guaranteed pulls are ignored: they are not a win and do not break a
+    loss streak (loss → G → loss = streak 2).
+    """
     longest = 0
     cur = 0
     for o in outcomes:
+        if o == "guaranteed":
+            continue
         if o == kind:
             cur += 1
             longest = max(longest, cur)
         else:
             cur = 0
-    # Current streak from the end (newest)
+    # Current streak from the newest end (skip guaranteed)
     current = 0
     for o in reversed(outcomes):
+        if o == "guaranteed":
+            continue
         if o == kind:
             current += 1
-        elif o == "guaranteed":
-            break
         else:
             break
     return {"longest": longest, "current": current}

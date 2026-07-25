@@ -9,24 +9,25 @@ import customtkinter as ctk
 
 from src.constants import THEME
 
-# Distinct series colors on dark canvas (pie / simple bars)
+# GFL2 type + class colors (DESIGN.md) — distinct on dark canvas
 _PALETTE = (
-    "#F54E00",
-    "#F7A501",
-    "#6ee7b7",
-    "#60a5fa",
-    "#c084fc",
-    "#f472b6",
-    "#a3e635",
-    "#38bdf8",
-    "#fb923c",
-    "#e879f9",
+    THEME["element_burn"],
+    THEME["element_corrosion"],
+    THEME["element_electric"],
+    THEME["element_freeze"],
+    THEME["element_hydro"],
+    THEME["element_omni"],
+    THEME["class_vanguard"],
+    THEME["class_bulwark"],
+    THEME["class_support"],
+    THEME["class_sentinel"],
+    THEME["element_physical"],
 )
 
-# Green (lucky) → red (worst-case V6 = 1120 pulls)
-_LUCK_GREEN = (34, 197, 94)
-_LUCK_YELLOW = (247, 165, 1)
-_LUCK_RED = (239, 68, 68)
+# Support (lucky) → Electric → Omni (worst-case V6)
+_LUCK_GREEN = (75, 126, 91)       # class_support
+_LUCK_YELLOW = (255, 215, 0)      # element_electric
+_LUCK_RED = (224, 49, 49)         # element_omni
 
 
 def _lerp(a: float, b: float, t: float) -> float:
@@ -75,7 +76,7 @@ class ChartFrame(ctk.CTkFrame):
         super().__init__(
             parent,
             fg_color=THEME["bg_surface"],
-            corner_radius=6,
+            corner_radius=0,
             border_width=1,
             border_color=THEME["border"],
         )
@@ -93,9 +94,9 @@ class ChartFrame(ctk.CTkFrame):
             font=title_font,
             text_color=THEME["text_strong"],
             fg_color="transparent",
-            anchor="w",
-            height=20,
-        ).pack(fill=tk.X, padx=6, pady=(2, 0))
+            anchor="center",
+            height=22,
+        ).pack(fill=tk.X, padx=8, pady=(8, 2))
 
         self.canvas = tk.Canvas(
             self,
@@ -332,10 +333,10 @@ def _heat_color(count: int, peak: int) -> str:
     if count <= 0 or peak <= 0:
         return THEME["bg_raised"]
     t = min(1.0, count / peak)
-    # muted → amber → CTA orange
+    # Neutral intensity ramp — easy day-to-day contrast on dark UI
     cold = (55, 58, 52)
-    mid = (247, 165, 1)
-    hot = (245, 78, 0)
+    mid = (247, 165, 1)     # amber
+    hot = (245, 78, 0)      # CTA orange
     if t < 0.5:
         u = t / 0.5
         rgb = tuple(_lerp(cold[i], mid[i], u) for i in range(3))
@@ -346,35 +347,37 @@ def _heat_color(count: int, peak: int) -> str:
 
 
 class ActivityHeatmap(ctk.CTkFrame):
-    """GitHub-style calendar heatmap of pulls per day."""
+    """GitHub-style calendar heatmap — section block with centered header."""
 
-    def __init__(self, parent, fonts=None, height: int = 140):
+    def __init__(self, parent, fonts=None, height: int = 178):
         super().__init__(
             parent,
             fg_color=THEME["bg_surface"],
-            corner_radius=6,
+            corner_radius=0,
             border_width=1,
             border_color=THEME["border"],
         )
         self.fonts = fonts
+        self._redraw_after = None
+        title_font = fonts.subheading if fonts else ("Segoe UI", 12, "bold")
         title = ctk.CTkLabel(
             self,
             text="Pull activity",
-            font=fonts.ui if fonts else ("Segoe UI", 12),
+            font=title_font,
             text_color=THEME["text_strong"],
             fg_color="transparent",
-            anchor="w",
+            anchor="center",
         )
-        title.pack(fill=tk.X, padx=10, pady=(8, 0))
+        title.pack(fill=tk.X, padx=12, pady=(10, 2))
         self._meta = ctk.CTkLabel(
             self,
             text="",
             font=fonts.body if fonts else ("Segoe UI", 11),
             text_color=THEME["text_muted"],
             fg_color="transparent",
-            anchor="w",
+            anchor="center",
         )
-        self._meta.pack(fill=tk.X, padx=10, pady=(0, 2))
+        self._meta.pack(fill=tk.X, padx=12, pady=(0, 2))
         self.canvas = tk.Canvas(
             self,
             height=height,
@@ -383,8 +386,27 @@ class ActivityHeatmap(ctk.CTkFrame):
             borderwidth=0,
         )
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
-        self.canvas.bind("<Configure>", lambda _e: self._redraw())
+        self.canvas.bind("<Configure>", self._on_configure)
+        self.canvas.bind("<Motion>", self._on_motion)
+        self.canvas.bind("<Leave>", self._on_leave)
         self._counts: Dict[str, int] = {}
+        self._last_size = (0, 0)
+        # (x0, y0, x1, y1, iso_date, count)
+        self._hit_cells: List[Tuple[float, float, float, float, str, int]] = []
+        self._tip_id = None
+        self._tip_bg_id = None
+
+    def _on_configure(self, _event=None):
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        if abs(w - self._last_size[0]) < 2 and abs(h - self._last_size[1]) < 2:
+            return
+        if self._redraw_after is not None:
+            try:
+                self.after_cancel(self._redraw_after)
+            except Exception:
+                pass
+        self._redraw_after = self.after(40, self._redraw)
 
     def set_data(self, activity_by_day: Optional[Dict[str, int]]) -> None:
         self._counts = dict(activity_by_day or {})
@@ -398,11 +420,75 @@ class ActivityHeatmap(ctk.CTkFrame):
         )
         self._redraw()
 
+    def _clear_tip(self):
+        c = self.canvas
+        if self._tip_id is not None:
+            c.delete(self._tip_id)
+            self._tip_id = None
+        if self._tip_bg_id is not None:
+            c.delete(self._tip_bg_id)
+            self._tip_bg_id = None
+
+    def _on_leave(self, _event=None):
+        self._clear_tip()
+
+    def _on_motion(self, event):
+        x, y = event.x, event.y
+        hit = None
+        for x0, y0, x1, y1, day, count in self._hit_cells:
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                hit = (day, count, x0, y0, x1, y1)
+                break
+        self._clear_tip()
+        if hit is None:
+            return
+        day, count, x0, y0, x1, y1 = hit
+        label = f"{day}: {count} pull{'s' if count != 1 else ''}"
+        c = self.canvas
+        # Prefer above the cell; flip below if near top
+        tx = (x0 + x1) / 2
+        ty = y0 - 6
+        anchor = "s"
+        if ty < 14:
+            ty = y1 + 6
+            anchor = "n"
+        # Clamp horizontally inside canvas
+        cw = max(c.winfo_width(), 1)
+        tx = max(40, min(cw - 40, tx))
+        self._tip_id = c.create_text(
+            tx,
+            ty,
+            text=label,
+            fill=THEME["text_strong"],
+            font=("Segoe UI", 8, "bold"),
+            anchor=anchor,
+            tags=("tip",),
+        )
+        bbox = c.bbox(self._tip_id)
+        if bbox:
+            pad = 3
+            self._tip_bg_id = c.create_rectangle(
+                bbox[0] - pad,
+                bbox[1] - pad,
+                bbox[2] + pad,
+                bbox[3] + pad,
+                fill=THEME["bg_raised"],
+                outline=THEME["border"],
+                width=1,
+                tags=("tip",),
+            )
+            c.tag_lower(self._tip_bg_id, self._tip_id)
+
     def _redraw(self) -> None:
+        self._redraw_after = None
         c = self.canvas
         c.delete("all")
+        self._hit_cells.clear()
+        self._tip_id = None
+        self._tip_bg_id = None
         w = max(c.winfo_width(), 200)
         h = max(c.winfo_height(), 80)
+        self._last_size = (w, h)
         if not self._counts:
             c.create_text(
                 w // 2,
@@ -413,7 +499,7 @@ class ActivityHeatmap(ctk.CTkFrame):
             )
             return
 
-        from datetime import date, datetime, timedelta
+        from datetime import datetime, timedelta
 
         days_sorted = sorted(self._counts)
         try:
@@ -422,33 +508,55 @@ class ActivityHeatmap(ctk.CTkFrame):
         except ValueError:
             return
 
-        # Align start to Monday
         start = start - timedelta(days=start.weekday())
         end = end + timedelta(days=(6 - end.weekday()))
         peak = max(self._counts.values()) or 1
+        weeks = max(1, ((end - start).days // 7) + 1)
 
-        cell = 11
+        pad_l = 34
+        pad_r = 4
+        week_band = 14  # reserved strip so week numbers are never clipped
+        pad_t = week_band + 2
+        pad_b = 4
         gap = 2
-        pad_l = 28
-        pad_t = 4
-        weeks = ((end - start).days // 7) + 1
-        # Shrink if too wide
-        avail = w - pad_l - 8
-        need = weeks * (cell + gap)
-        if need > avail and weeks > 0:
-            cell = max(6, int((avail / weeks) - gap))
+        avail_w = max(40, w - pad_l - pad_r)
+        avail_h = max(40, h - pad_t - pad_b)
 
-        weekday_labels = ("Mon", "", "Wed", "", "Fri", "", "")
+        cell_w = max(4, (avail_w - gap * (weeks - 1)) // weeks)
+        cell_h = max(4, (avail_h - gap * 6) // 7)
+
+        grid_w = weeks * cell_w + (weeks - 1) * gap
+        grid_h = 7 * cell_h + 6 * gap
+        ox = pad_l + max(0, (avail_w - grid_w) // 2)
+        # Keep grid below the week-number band (don't vertically center into it)
+        oy = pad_t + max(0, (avail_h - grid_h) // 2)
+
+        weekday_labels = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
         for i, lab in enumerate(weekday_labels):
-            if lab:
-                c.create_text(
-                    4,
-                    pad_t + i * (cell + gap) + cell / 2,
-                    text=lab,
-                    anchor="w",
-                    fill=THEME["text_muted"],
-                    font=("Segoe UI", 7),
-                )
+            c.create_text(
+                ox - 4,
+                oy + i * (cell_h + gap) + cell_h / 2,
+                text=lab,
+                anchor="e",
+                fill=THEME["text_muted"],
+                font=("Segoe UI", 7),
+            )
+
+        # Week numbers in the reserved top band (ISO week)
+        for week in range(weeks):
+            monday = start + timedelta(days=week * 7)
+            iso_week = monday.isocalendar()[1]
+            cx = ox + week * (cell_w + gap) + cell_w / 2
+            if cell_w < 12 and week % 2:
+                continue
+            c.create_text(
+                cx,
+                week_band // 2,
+                text=str(iso_week),
+                fill=THEME["text_muted"],
+                font=("Segoe UI", 7),
+                anchor="center",
+            )
 
         d = start
         while d <= end:
@@ -456,16 +564,19 @@ class ActivityHeatmap(ctk.CTkFrame):
             wd = d.weekday()
             key = d.isoformat()
             count = self._counts.get(key, 0)
-            x0 = pad_l + week * (cell + gap)
-            y0 = pad_t + wd * (cell + gap)
+            x0 = ox + week * (cell_w + gap)
+            y0 = oy + wd * (cell_h + gap)
+            x1 = x0 + cell_w
+            y1 = y0 + cell_h
             color = _heat_color(count, peak)
             c.create_rectangle(
                 x0,
                 y0,
-                x0 + cell,
-                y0 + cell,
+                x1,
+                y1,
                 fill=color,
                 outline=THEME["bg_canvas"],
                 width=1,
             )
+            self._hit_cells.append((x0, y0, x1, y1, key, count))
             d += timedelta(days=1)
