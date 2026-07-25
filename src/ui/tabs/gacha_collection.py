@@ -9,18 +9,20 @@ import customtkinter as ctk
 from PIL import Image
 
 from src.constants import THEME
-from src.core.gacha_names import (
-    NAMED_WEAPONS,
-    STANDARD_ELITE_WEAPON_NAMES,
-    STANDARD_WEAPONS,
-    doll_portrait_names,
-    portrait_path_for_doll,
-)
-from src.core.gacha_stats import MAX_COPIES, annotate_pulls
+from src.core.gacha_names import doll_portrait_names, portrait_path_for_doll
+from src.core.gacha_stats import MAX_COPIES
 from src.data.gacha_db import GachaDB
 from src.ui.styles import create_button
 
 _PORTRAIT_SIZE = (72, 72)
+_CARD_W = 108
+_CARD_H = 148
+_CARD_PADX = 4
+_CARD_PADY = 4
+# Allow card width to flex so N columns fit the viewport without clipping
+_CARD_FLEX = 0.10
+# Stats "complete" accent — V6 done
+_V6_BORDER = THEME["class_support"]
 
 
 class GachaCollectionTab(ctk.CTkFrame):
@@ -30,15 +32,19 @@ class GachaCollectionTab(ctk.CTkFrame):
         self.db = db or GachaDB()
         self.on_change = on_change
         self._edit = tk.BooleanVar(value=False)
-        # name -> CTkImage (owned / dimmed)
         self._img_owned: Dict[str, ctk.CTkImage] = {}
         self._img_dim: Dict[str, ctk.CTkImage] = {}
-        # (name, type) -> card widgets
         self._cards: Dict[Tuple[str, str], dict] = {}
+        self._doll_order: List[str] = []
         self._built = False
         self._scanned: Dict[Tuple[str, str], int] = {}
         self._overrides: Dict[Tuple[str, str], int] = {}
         self._notify_after = None
+        self._cols = 0
+        self._card_w = _CARD_W
+        self._layout_after = None
+        self._portrait_queue: List[str] = []
+        self._portrait_job = None
         self.setup_ui()
         self.refresh()
 
@@ -46,7 +52,7 @@ class GachaCollectionTab(ctk.CTkFrame):
         toolbar = ctk.CTkFrame(
             self,
             fg_color=THEME["bg_surface"],
-            corner_radius=6,
+            corner_radius=0,
             border_width=1,
             border_color=THEME["border"],
         )
@@ -65,7 +71,7 @@ class GachaCollectionTab(ctk.CTkFrame):
 
         ctk.CTkLabel(
             row,
-            text="Elite copies from scans (max V6). Edit to correct ranks outside Access Records.",
+            text="Elite doll copies from scans (max V6). Edit to correct ranks outside Access Records.",
             font=self.fonts.body,
             text_color=THEME["text_muted"],
             fg_color="transparent",
@@ -97,31 +103,135 @@ class GachaCollectionTab(ctk.CTkFrame):
         )
         self.scroll.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
 
-        ctk.CTkLabel(
+        self.section = ctk.CTkFrame(
             self.scroll,
+            fg_color=THEME["bg_surface"],
+            corner_radius=0,
+            border_width=1,
+            border_color=THEME["border"],
+        )
+        self.section.pack(fill=tk.X, padx=2, pady=2)
+
+        ctk.CTkLabel(
+            self.section,
             text="Dolls",
             font=self.fonts.subheading,
             text_color=THEME["text_strong"],
             fg_color="transparent",
-            anchor="w",
-        ).pack(fill=tk.X, padx=4, pady=(4, 2))
+            anchor="center",
+        ).pack(fill=tk.X, padx=12, pady=(10, 4))
 
-        self.dolls_grid = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        self.dolls_grid.pack(fill=tk.X, padx=2, pady=2)
+        self.dolls_grid = ctk.CTkFrame(self.section, fg_color="transparent")
+        self.dolls_grid.pack(fill=tk.X, padx=8, pady=(0, 8))
 
-        ctk.CTkLabel(
-            self.scroll,
-            text="Weapons",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-            anchor="w",
-        ).pack(fill=tk.X, padx=4, pady=(12, 2))
+        # Viewport resize — must use add="+" so we don't replace CTk's scrollregion bind
+        self.scroll.bind("<Configure>", self._on_grid_configure, add="+")
+        self.bind("<Configure>", self._on_grid_configure, add="+")
 
-        self.weapons_grid = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        self.weapons_grid.pack(fill=tk.X, padx=2, pady=2)
+    def _viewport_width_logical(self) -> float:
+        """Visible scroll canvas width in CTk logical (unscaled) units."""
+        scale = max(float(self._get_widget_scaling()), 0.01)
+        canvas = getattr(self.scroll, "_parent_canvas", None)
+        px = 0
+        if canvas is not None:
+            try:
+                px = int(canvas.winfo_width())
+            except tk.TclError:
+                px = 0
+        if px < 40:
+            try:
+                px = int(self.scroll.winfo_width())
+            except tk.TclError:
+                px = 0
+        if px < 40:
+            try:
+                px = max(0, int(self.winfo_width()) - 16)
+            except tk.TclError:
+                px = 0
+        # Inner paddings: section 2+2, grid 8+8, border ~2; leave room for scrollbar
+        usable_px = max(0, px - 28)
+        return usable_px / scale
 
-    def _portrait_images(self, name: str) -> Tuple[Optional[ctk.CTkImage], Optional[ctk.CTkImage]]:
+    def _fit_columns(self, usable: float) -> Tuple[int, int]:
+        """Pick column count + card width; card may flex ±10% to avoid clipping."""
+        pad = 2 * _CARD_PADX
+        min_w = _CARD_W * (1.0 - _CARD_FLEX)
+        max_w = _CARD_W * (1.0 + _CARD_FLEX)
+        if usable < min_w + pad:
+            return 1, int(round(min_w))
+
+        # Max columns that fit if cards shrink to the floor
+        cols = max(1, int(usable // (min_w + pad)))
+        # Ideal width to fill the row evenly
+        card_w = usable / cols - pad
+        card_w = max(min_w, min(max_w, card_w))
+
+        # If even min width overflows (float noise / scrollbar), drop a column
+        while cols > 1 and cols * (min_w + pad) > usable + 0.5:
+            cols -= 1
+            card_w = usable / cols - pad
+            card_w = max(min_w, min(max_w, card_w))
+
+        # Final safety: if still too wide at this card_w, force shrink to fit
+        if cols * (card_w + pad) > usable + 0.5:
+            card_w = max(min_w, usable / cols - pad)
+
+        return cols, max(1, int(round(card_w)))
+
+    def _on_grid_configure(self, _event=None):
+        if self._layout_after is not None:
+            try:
+                self.after_cancel(self._layout_after)
+            except Exception:
+                pass
+        # Slightly longer debounce — resize floods Configure events
+        self._layout_after = self.after(60, self._relayout_grid)
+
+    def _refresh_scrollregion(self):
+        """Keep CTkScrollableFrame's canvas in sync after grid height changes."""
+        canvas = getattr(self.scroll, "_parent_canvas", None)
+        if canvas is None:
+            return
+        try:
+            self.scroll.update_idletasks()
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        except tk.TclError:
+            pass
+
+    def _relayout_grid(self):
+        self._layout_after = None
+        if not self._built or not self._doll_order:
+            return
+        usable = self._viewport_width_logical()
+        if usable < 40:
+            return
+        cols, card_w = self._fit_columns(usable)
+        if cols == self._cols and card_w == self._card_w:
+            self._refresh_scrollregion()
+            return
+        self._cols = cols
+        self._card_w = card_w
+        wrap = max(48, card_w - 12)
+        for i, name in enumerate(self._doll_order):
+            meta = self._cards.get((name, "Doll"))
+            if not meta:
+                continue
+            meta["card"].configure(width=card_w)
+            meta["name_lbl"].configure(wraplength=wrap)
+            meta["card"].grid(
+                row=i // cols,
+                column=i % cols,
+                padx=_CARD_PADX,
+                pady=_CARD_PADY,
+                sticky="n",
+            )
+        self._refresh_scrollregion()
+        # Second pass after geometry settles (more rows → taller content)
+        self.after_idle(self._refresh_scrollregion)
+
+    def _portrait_images(
+        self, name: str
+    ) -> Tuple[Optional[ctk.CTkImage], Optional[ctk.CTkImage]]:
         if name in self._img_owned:
             return self._img_owned[name], self._img_dim.get(name)
         path = portrait_path_for_doll(name)
@@ -129,6 +239,7 @@ class GachaCollectionTab(ctk.CTkFrame):
             return None, None
         try:
             base = Image.open(path).convert("RGBA")
+            base = base.resize(_PORTRAIT_SIZE, Image.Resampling.LANCZOS)
             owned = ctk.CTkImage(
                 light_image=base, dark_image=base, size=_PORTRAIT_SIZE
             )
@@ -144,12 +255,47 @@ class GachaCollectionTab(ctk.CTkFrame):
         except OSError:
             return None, None
 
+    def _queue_portraits(self, names: List[str]):
+        """Load portrait images in small idle chunks so first paint stays snappy."""
+        self._portrait_queue = [n for n in names if n not in self._img_owned]
+        if self._portrait_job is not None:
+            try:
+                self.after_cancel(self._portrait_job)
+            except Exception:
+                pass
+            self._portrait_job = None
+        if self._portrait_queue:
+            self._portrait_job = self.after(1, self._drain_portraits)
+
+    def _drain_portraits(self):
+        self._portrait_job = None
+        batch = self._portrait_queue[:6]
+        self._portrait_queue = self._portrait_queue[6:]
+        for name in batch:
+            self._portrait_images(name)
+            meta = self._cards.get((name, "Doll"))
+            if meta and meta.get("img_lbl") is not None:
+                copies, _, _ = self._effective_copies(name, "Doll")
+                owned_img = self._img_owned.get(name)
+                dim_img = self._img_dim.get(name)
+                img = owned_img if copies > 0 else dim_img
+                if img is not None:
+                    meta["img_lbl"].configure(image=img)
+        if self._portrait_queue:
+            self._portrait_job = self.after(8, self._drain_portraits)
+
     def _effective_copies(self, name: str, item_type: str) -> Tuple[int, bool, int]:
         key = (name, item_type)
         scanned = int(self._scanned.get(key, 0))
         if key in self._overrides:
             return int(self._overrides[key]), True, scanned
         return min(scanned, MAX_COPIES), False, scanned
+
+    def _border_for(self, copies: int) -> str:
+        # V6 = 7 copies (V0..V6); match Stats "complete" support green
+        if copies >= MAX_COPIES:
+            return _V6_BORDER
+        return THEME["border"]
 
     def _schedule_notify(self):
         if not self.on_change:
@@ -181,7 +327,6 @@ class GachaCollectionTab(ctk.CTkFrame):
         self._schedule_notify()
 
     def _on_edit_toggle(self):
-        # Toggle +/- visibility without rebuilding the gallery
         edit = self._edit.get()
         for meta in self._cards.values():
             row = meta["rank_row"]
@@ -192,14 +337,6 @@ class GachaCollectionTab(ctk.CTkFrame):
             meta["rank_lbl"].pack(side=tk.LEFT)
             if edit:
                 meta["btn_plus"].pack(side=tk.LEFT, padx=2)
-
-            key = meta["key"]
-            copies, _, _ = self._effective_copies(*key)
-            if key[1] == "Weapons" and copies <= 0 and key not in self._overrides:
-                if edit:
-                    meta["card"].grid()
-                else:
-                    meta["card"].grid_remove()
 
     def _paint_card(self, name: str, item_type: str):
         key = (name, item_type)
@@ -217,48 +354,50 @@ class GachaCollectionTab(ctk.CTkFrame):
             text_color=THEME["text_strong"] if owned else THEME["text_muted"],
         )
         meta["card"].configure(
-            fg_color=THEME["bg_surface"] if owned else THEME["bg_raised"],
-            border_color=THEME["accent_amber"] if overridden else THEME["border"],
+            fg_color=THEME["bg_canvas"] if owned else THEME["bg_raised"],
+            border_color=self._border_for(copies),
         )
         img_lbl = meta.get("img_lbl")
-        if img_lbl is not None:
-            owned_img, dim_img = self._portrait_images(name)
+        if img_lbl is not None and name in self._img_owned:
+            owned_img, dim_img = self._img_owned[name], self._img_dim.get(name)
             img = owned_img if owned else dim_img
             if img is not None:
                 img_lbl.configure(image=img)
 
-    def _make_card(
-        self,
-        parent,
-        name: str,
-        item_type: str,
-        *,
-        with_portrait: bool,
-        grid_row: int,
-        grid_col: int,
-    ) -> dict:
+    def _make_card(self, name: str, *, grid_row: int, grid_col: int) -> dict:
+        item_type = "Doll"
         copies, overridden, _ = self._effective_copies(name, item_type)
         owned = copies > 0
         edit = self._edit.get()
 
         card = ctk.CTkFrame(
-            parent,
-            fg_color=THEME["bg_surface"] if owned else THEME["bg_raised"],
-            corner_radius=6,
+            self.dolls_grid,
+            fg_color=THEME["bg_canvas"] if owned else THEME["bg_raised"],
+            corner_radius=0,
             border_width=1,
-            border_color=THEME["accent_amber"] if overridden else THEME["border"],
-            width=108,
-            height=148 if with_portrait else 72,
+            border_color=self._border_for(copies),
+            width=self._card_w,
+            height=_CARD_H,
         )
         card.pack_propagate(False)
-        card.grid(row=grid_row, column=grid_col, padx=4, pady=4, sticky="n")
+        card.grid(
+            row=grid_row,
+            column=grid_col,
+            padx=_CARD_PADX,
+            pady=_CARD_PADY,
+            sticky="n",
+        )
 
-        img_lbl = None
-        if with_portrait:
-            owned_img, dim_img = self._portrait_images(name)
+        # Placeholder until idle portrait drain fills images
+        img_lbl = ctk.CTkLabel(
+            card, text="", fg_color="transparent", width=72, height=72
+        )
+        img_lbl.pack(pady=(8, 2))
+        if name in self._img_owned:
+            owned_img, dim_img = self._img_owned[name], self._img_dim.get(name)
             img = owned_img if owned else dim_img
-            img_lbl = ctk.CTkLabel(card, image=img, text="", fg_color="transparent")
-            img_lbl.pack(pady=(8, 2))
+            if img is not None:
+                img_lbl.configure(image=img)
 
         name_lbl = ctk.CTkLabel(
             card,
@@ -266,7 +405,7 @@ class GachaCollectionTab(ctk.CTkFrame):
             font=self.fonts.body,
             text_color=THEME["text_strong"] if owned else THEME["text_muted"],
             fg_color="transparent",
-            wraplength=96,
+            wraplength=max(48, self._card_w - 12),
         )
         name_lbl.pack(padx=4)
 
@@ -309,14 +448,6 @@ class GachaCollectionTab(ctk.CTkFrame):
         if edit:
             btn_plus.pack(side=tk.LEFT, padx=2)
 
-        if (
-            item_type == "Weapons"
-            and copies <= 0
-            and (name, item_type) not in self._overrides
-            and not edit
-        ):
-            card.grid_remove()
-
         meta = {
             "key": (name, item_type),
             "card": card,
@@ -331,18 +462,13 @@ class GachaCollectionTab(ctk.CTkFrame):
         return meta
 
     def _load_counts(self):
-        self._overrides = self.db.get_collection_overrides()
-        timeline = annotate_pulls(self.db.list_all_oldest_first())
-        self._scanned = {}
-        for p in timeline:
-            if p.get("rarity") != "elite":
-                continue
-            name = (p.get("item_name") or "").strip()
-            itype = p.get("item_type") or ""
-            if not name or itype not in ("Doll", "Weapons"):
-                continue
-            key = (name, itype)
-            self._scanned[key] = self._scanned.get(key, 0) + 1
+        self._overrides = {
+            k: v
+            for k, v in self.db.get_collection_overrides().items()
+            if k[1] == "Doll"
+        }
+        # Fast SQL aggregate — avoids annotate_pulls over the full timeline
+        self._scanned = self.db.count_elite_copies(item_type="Doll")
 
     def refresh(self):
         """Rebuild gallery once; later updates paint in place."""
@@ -352,45 +478,25 @@ class GachaCollectionTab(ctk.CTkFrame):
             for key in list(self._cards):
                 self._paint_card(*key)
             self._on_edit_toggle()
+            self._on_grid_configure()
             return
 
         for child in self.dolls_grid.winfo_children():
             child.destroy()
-        for child in self.weapons_grid.winfo_children():
-            child.destroy()
         self._cards.clear()
+        self._doll_order = list(doll_portrait_names())
+        self._cols = 0
 
-        cols = 8
-        dolls = list(doll_portrait_names())
-        for i, name in enumerate(dolls):
-            self._make_card(
-                self.dolls_grid,
-                name,
-                "Doll",
-                with_portrait=True,
-                grid_row=i // cols,
-                grid_col=i % cols,
-            )
-
-        weapon_names = (
-            list(STANDARD_WEAPONS)
-            + list(STANDARD_ELITE_WEAPON_NAMES)
-            + list(NAMED_WEAPONS)
-        )
-        seen = set(weapon_names)
-        for (name, itype), copies in {**self._scanned, **self._overrides}.items():
-            if itype == "Weapons" and name not in seen:
-                weapon_names.append(name)
-                seen.add(name)
-
-        for i, name in enumerate(weapon_names):
-            self._make_card(
-                self.weapons_grid,
-                name,
-                "Weapons",
-                with_portrait=False,
-                grid_row=i // cols,
-                grid_col=i % cols,
-            )
+        # Initial guess; Configure will correct to viewport width
+        usable = self._viewport_width_logical()
+        if usable < 40:
+            usable = 720
+        guess, card_w = self._fit_columns(usable)
+        self._card_w = card_w
+        for i, name in enumerate(self._doll_order):
+            self._make_card(name, grid_row=i // guess, grid_col=i % guess)
 
         self._built = True
+        self._cols = guess
+        self._queue_portraits(self._doll_order)
+        self.after_idle(self._relayout_grid)

@@ -231,6 +231,24 @@ class GachaDB:
             row = conn.execute("SELECT COUNT(*) FROM pulls").fetchone()
         return int(row[0]) if row else 0
 
+    def count_elite_copies(
+        self, item_type: Optional[str] = None
+    ) -> Dict[Tuple[str, str], int]:
+        """Elite pull counts by (item_name, item_type) — no full timeline load."""
+        sql = """
+            SELECT item_name, item_type, COUNT(*) AS n
+            FROM pulls
+            WHERE lower(trim(rarity_color)) IN ('elite', 'gold')
+        """
+        params: list = []
+        if item_type:
+            sql += " AND item_type = ?"
+            params.append(item_type)
+        sql += " GROUP BY item_name, item_type"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return {(r[0], r[1]): int(r[2]) for r in rows}
+
     def clear_all(self) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM pulls")
