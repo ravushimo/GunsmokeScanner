@@ -1,249 +1,420 @@
-"""CustomTkinter / ttk theming aligned with `.docs/DESIGN.md`.
+"""Qt stylesheet and button helpers aligned with `.docs/DESIGN.md`."""
 
-`setup_theme()` configures global CTk appearance plus the ttk.Style entries
-we still need (Treeview, Combobox, Scrollbar). `create_button()` returns a
-preconfigured CTkButton in one of four variants from DESIGN.md. Use
-`attach_hover_flash` to give non-button widgets the orange-on-hover signal.
-"""
+from __future__ import annotations
 
-import sys
-import tkinter as tk
-from pathlib import Path
-from tkinter import ttk
+from typing import Callable, Optional, Sequence, Union
 
-import customtkinter as ctk
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QColor, QCursor, QPalette
+from PySide6.QtWidgets import (
+    QFrame,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableView,
+    QTableWidget,
+    QWidget,
+)
 
 from src.constants import THEME
 
-ButtonVariant = str  # "primary" | "secondary" | "featured" | "ghost"
+ButtonVariant = str  # "primary" | "secondary" | "featured" | "ghost" | "danger"
+
+# Solid red for destructive actions (THEME["danger"] is a light text tint).
+_DANGER_BG = "#B91C1C"
+_DANGER_HOVER = "#DC2626"
+_DANGER_PRESSED = "#991B1B"
 
 
-def _theme_path() -> str:
-    """Locate the bundled CTk theme JSON in dev and PyInstaller layouts."""
-    if hasattr(sys, "_MEIPASS"):
-        base = Path(sys._MEIPASS)
-    else:
-        base = Path(__file__).resolve().parents[2]
-    return str(base / "assets" / "ctk_theme.json")
-
-
-def _patch_dropdown_menu_borders():
-    """Remove the bright Windows frame CTk paints around OptionMenu popups.
-
-    CTk's DropdownMenu uses tk.Menu with borderwidth=4 on Windows, which shows
-    as a light gray outline. Force a flat, borderless dark menu instead.
+def build_stylesheet(font_family: str = "Segoe UI") -> str:
+    """Application-wide QSS from THEME tokens."""
+    t = THEME
+    return f"""
+    QWidget {{
+        background-color: {t["bg_canvas"]};
+        color: {t["text_primary"]};
+        font-family: "{font_family}";
+        font-size: 10pt;
+    }}
+    QMainWindow, QDialog {{
+        background-color: {t["bg_canvas"]};
+    }}
+    QLabel {{
+        background: transparent;
+        color: {t["text_primary"]};
+    }}
+    QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox {{
+        background-color: {t["bg_surface"]};
+        color: {t["text_input"]};
+        border: 1px solid {t["border_strong"]};
+        border-radius: 4px;
+        padding: 4px 6px;
+        selection-background-color: {t["bg_hover"]};
+        selection-color: {t["accent_orange"]};
+    }}
+    QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus {{
+        border: 1px solid {t["focus"]};
+    }}
+    QComboBox {{
+        background-color: {t["bg_surface"]};
+        color: {t["text_input"]};
+        border: 1px solid {t["border_strong"]};
+        border-radius: 4px;
+        padding: 4px 8px;
+        min-height: 24px;
+    }}
+    QComboBox:hover {{
+        background-color: {t["bg_hover"]};
+    }}
+    QComboBox::drop-down {{
+        border: none;
+        width: 20px;
+    }}
+    QComboBox QAbstractItemView {{
+        background-color: {t["bg_surface"]};
+        color: {t["text_input"]};
+        border: 1px solid {t["border"]};
+        selection-background-color: {t["bg_hover"]};
+        selection-color: {t["accent_orange"]};
+    }}
+    QCheckBox {{
+        background: transparent;
+        color: {t["text_primary"]};
+        spacing: 6px;
+    }}
+    QCheckBox::indicator {{
+        width: 14px;
+        height: 14px;
+        border: 1px solid {t["border_strong"]};
+        border-radius: 3px;
+        background: {t["bg_raised"]};
+    }}
+    QCheckBox::indicator:checked {{
+        background: {t["cta_dark"]};
+        border-color: {t["cta_dark"]};
+    }}
+    QRadioButton {{
+        background: transparent;
+        color: {t["text_primary"]};
+        spacing: 6px;
+    }}
+    QRadioButton::indicator {{
+        width: 14px;
+        height: 14px;
+        border: 1px solid {t["border_strong"]};
+        border-radius: 7px;
+        background: {t["bg_raised"]};
+    }}
+    QRadioButton::indicator:checked {{
+        background: {t["cta_dark"]};
+        border-color: {t["cta_dark"]};
+    }}
+    QScrollArea {{
+        border: none;
+        background: transparent;
+    }}
+    QScrollBar:vertical {{
+        background: {t["bg_surface"]};
+        width: 10px;
+        margin: 0;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {t["bg_raised"]};
+        border-radius: 4px;
+        min-height: 24px;
+    }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+        height: 0;
+    }}
+    QScrollBar:horizontal {{
+        background: {t["bg_surface"]};
+        height: 10px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {t["bg_raised"]};
+        border-radius: 4px;
+        min-width: 24px;
+    }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+        width: 0;
+    }}
+    QTableView, QTreeView, QListView {{
+        background-color: {t["bg_canvas"]};
+        alternate-background-color: {t["bg_surface"]};
+        color: {t["text_primary"]};
+        border: 1px solid {t["border"]};
+        gridline-color: {t["border"]};
+        selection-background-color: {t["bg_hover"]};
+        selection-color: {t["accent_orange"]};
+        outline: none;
+    }}
+    QHeaderView::section {{
+        background-color: {t["bg_surface"]};
+        color: {t["text_strong"]};
+        border: none;
+        border-right: 1px solid {t["border"]};
+        border-bottom: 1px solid {t["border"]};
+        padding: 4px 6px;
+        font-weight: 600;
+    }}
+    QHeaderView::section:hover {{
+        background-color: {t["bg_raised"]};
+        color: {t["accent_orange"]};
+    }}
+    QGroupBox {{
+        background-color: transparent;
+        border: none;
+        border-top: 1px solid {t["border"]};
+        margin-top: 12px;
+        padding-top: 8px;
+        font-weight: 600;
+        color: {t["text_strong"]};
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        left: 0;
+        padding: 0 4px 0 0;
+    }}
+    QFrame#Toolbar {{
+        background-color: {t["bg_surface"]};
+        border: none;
+        border-bottom: 1px solid {t["border"]};
+    }}
+    QFrame#Section {{
+        background-color: transparent;
+        border: none;
+    }}
+    QFrame#Card {{
+        background-color: transparent;
+        border: 1px solid {t["border"]};
+    }}
+    QFrame#StatStrip {{
+        background-color: transparent;
+        border: none;
+        border-top: 1px solid {t["border"]};
+        border-bottom: 1px solid {t["border"]};
+    }}
+    QToolTip {{
+        background-color: {t["bg_raised"]};
+        color: {t["text_strong"]};
+        border: 1px solid {t["border"]};
+        padding: 4px;
+    }}
+    QMenu {{
+        background-color: {t["bg_surface"]};
+        color: {t["text_input"]};
+        border: 1px solid {t["border"]};
+    }}
+    QMenu::item:selected {{
+        background-color: {t["bg_hover"]};
+        color: {t["accent_orange"]};
+    }}
+    QProgressBar {{
+        background-color: {t["bg_surface"]};
+        border: 1px solid {t["border"]};
+        border-radius: 4px;
+        text-align: center;
+        color: {t["text_strong"]};
+    }}
+    QProgressBar::chunk {{
+        background-color: {t["cta_dark"]};
+    }}
+    QSplitter::handle {{
+        background-color: {t["border"]};
+    }}
     """
-    try:
-        from customtkinter.windows.widgets.core_widget_classes.dropdown_menu import (
-            DropdownMenu,
+
+
+def toolbar_frame(parent: Optional[QWidget] = None) -> QFrame:
+    """Thin chrome strip for page toolbars (single bottom edge, no box)."""
+    frame = QFrame(parent)
+    frame.setObjectName("Toolbar")
+    frame.setStyleSheet(
+        f"QFrame#Toolbar {{ background-color: {THEME['bg_surface']};"
+        f" border: none; border-bottom: 1px solid {THEME['border']}; }}"
+    )
+    return frame
+
+
+def section_frame(parent: Optional[QWidget] = None) -> QFrame:
+    """Flat content section - no fill, no border (avoids nested boxes)."""
+    frame = QFrame(parent)
+    frame.setObjectName("Section")
+    frame.setStyleSheet("QFrame#Section { background: transparent; border: none; }")
+    return frame
+
+
+def card_frame(parent: Optional[QWidget] = None, *, accent: Optional[str] = None) -> QFrame:
+    """Single-border card on canvas (no raised fill)."""
+    frame = QFrame(parent)
+    frame.setObjectName("Card")
+    border = accent or THEME["border"]
+    frame.setStyleSheet(
+        f"QFrame#Card {{ background-color: transparent;"
+        f" border: 1px solid {border}; }}"
+    )
+    return frame
+
+
+def stat_strip(parent: Optional[QWidget] = None) -> QFrame:
+    """Hairline-bounded status/stats row without a filled background."""
+    frame = QFrame(parent)
+    frame.setObjectName("StatStrip")
+    frame.setStyleSheet(
+        f"QFrame#StatStrip {{ background: transparent; border: none;"
+        f" border-top: 1px solid {THEME['border']};"
+        f" border-bottom: 1px solid {THEME['border']}; }}"
+    )
+    return frame
+
+
+def configure_stretch_table(
+    table: Union[QTableWidget, QTableView],
+    *,
+    stretch: Union[int, Sequence[int]],
+    min_widths: Optional[Sequence[int]] = None,
+) -> None:
+    """Interactive columns that grow with the window; stretch named columns."""
+    header = table.horizontalHeader()
+    header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    header.setStretchLastSection(False)
+    cols = table.columnCount() if isinstance(table, QTableWidget) else table.model().columnCount()
+    stretch_set = {stretch} if isinstance(stretch, int) else set(stretch)
+    for i in range(cols):
+        if min_widths is not None and i < len(min_widths) and min_widths[i]:
+            table.setColumnWidth(i, min_widths[i])
+        mode = (
+            QHeaderView.ResizeMode.Stretch
+            if i in stretch_set
+            else QHeaderView.ResizeMode.Interactive
         )
-    except ImportError:
-        return
-
-    _orig = DropdownMenu._configure_menu_for_platforms
-
-    def _configure_menu_for_platforms(self):
-        _orig(self)
-        if sys.platform.startswith("win"):
-            try:
-                tk.Menu.configure(
-                    self,
-                    relief="flat",
-                    borderwidth=0,
-                    activeborderwidth=0,
-                    bd=0,
-                )
-            except tk.TclError:
-                pass
-
-    DropdownMenu._configure_menu_for_platforms = _configure_menu_for_platforms
+        header.setSectionResizeMode(i, mode)
 
 
-def apply_ctk_theme():
-    """Set CTk appearance + color theme. Must run before creating the CTk root."""
-    # Match gunsmoke.app default (dark :root)
-    ctk.set_appearance_mode("dark")
-    try:
-        ctk.set_default_color_theme(_theme_path())
-    except (FileNotFoundError, ValueError):
-        # Fallback to a built-in theme if the JSON is missing/invalid.
-        ctk.set_default_color_theme("blue")
-    _patch_dropdown_menu_borders()
-
-
-def setup_ttk_styles(fonts):
-    """Configure ttk styles for the widgets we still use (Treeview, Combobox).
-
-    Must be called after the CTk root window exists so the style talks to
-    the right interpreter.
-    """
-    style = ttk.Style()
-    style.theme_use("clam")
-
-    # Treeview — dark surfaces; clam theme needs lightcolor/darkcolor or it
-    # paints bright 3D borders around the table and header separator.
-    body = (fonts.body.cget("family"), fonts.body.cget("size"))
-    head = (fonts.ui.cget("family"), fonts.ui.cget("size"), "bold")
-    border = THEME["border"]
-    canvas = THEME["bg_canvas"]
-    surface = THEME["bg_surface"]
-
-    style.configure(
-        "Custom.Treeview",
-        background=canvas,
-        foreground=THEME["text_primary"],
-        fieldbackground=canvas,
-        bordercolor=border,
-        lightcolor=canvas,
-        darkcolor=canvas,
-        borderwidth=0,
-        relief="flat",
-        rowheight=24,
-        font=body,
-    )
-    style.configure(
-        "Custom.Treeview.Heading",
-        background=surface,
-        foreground=THEME["text_strong"],
-        bordercolor=border,
-        lightcolor=surface,
-        darkcolor=surface,
-        borderwidth=0,
-        relief="flat",
-        font=head,
-    )
-    style.map(
-        "Custom.Treeview",
-        background=[("selected", THEME["bg_hover"])],
-        foreground=[("selected", THEME["accent_orange"])],
-        bordercolor=[("focus", border), ("!focus", border)],
-        lightcolor=[("focus", canvas), ("!focus", canvas)],
-        darkcolor=[("focus", canvas), ("!focus", canvas)],
-    )
-    style.map(
-        "Custom.Treeview.Heading",
-        background=[("active", THEME["bg_raised"])],
-        foreground=[("active", THEME["accent_orange"])],
-        bordercolor=[("active", border)],
-        lightcolor=[("active", THEME["bg_raised"])],
-        darkcolor=[("active", THEME["bg_raised"])],
-    )
-    # Drop clam's outer border element so no light frame remains
-    style.layout(
-        "Custom.Treeview",
-        [("Treeview.treearea", {"sticky": "nswe"})],
-    )
-
-    # Combobox - used on the Upload tab for the API environment selector.
-    style.configure(
-        "Custom.TCombobox",
-        fieldbackground=THEME["bg_surface"],
-        background=THEME["bg_surface"],
-        foreground=THEME["text_input"],
-        bordercolor=THEME["border_strong"],
-        arrowcolor=THEME["text_muted"],
-        lightcolor=THEME["bg_surface"],
-        darkcolor=THEME["bg_surface"],
-        selectbackground=THEME["bg_hover"],
-        selectforeground=THEME["accent_orange"],
-        padding=4,
-    )
-    style.map(
-        "Custom.TCombobox",
-        fieldbackground=[("readonly", THEME["bg_surface"])],
-        foreground=[("readonly", THEME["text_input"])],
-    )
-
-    # Scrollbar - kept on tk.Scrollbar instances that pair with Treeview.
-    style.configure(
-        "Custom.Vertical.TScrollbar",
-        background=THEME["bg_raised"],
-        troughcolor=THEME["bg_surface"],
-        bordercolor=THEME["border"],
-        arrowcolor=THEME["text_muted"],
-        lightcolor=THEME["bg_raised"],
-        darkcolor=THEME["bg_raised"],
-    )
-
-
-# CTkButton variant presets per DESIGN.md "Buttons" section. Each maps a
-# variant name to the kwargs used when constructing the button.
-_BUTTON_VARIANTS = {
-    "primary": {
-        "fg_color": THEME["cta_dark"],
-        "hover_color": "#d94400",
-        "text_color": THEME["cta_dark_text"],
-        "corner_radius": 6,
-        "border_width": 0,
-    },
-    "secondary": {
-        "fg_color": THEME["bg_raised"],
-        "hover_color": THEME["bg_hover"],
-        "text_color": THEME["text_primary"],
-        "corner_radius": 4,
-        "border_width": 0,
-    },
-    "featured": {
-        "fg_color": THEME["bg_featured"],
-        "hover_color": THEME["bg_hover"],
-        "text_color": THEME["text_strong"],
-        "corner_radius": 6,
-        "border_width": 1,
-        "border_color": "#b17816",
-    },
-    "ghost": {
-        "fg_color": "transparent",
-        "hover_color": THEME["bg_hover"],
-        "text_color": THEME["text_primary"],
-        "corner_radius": 4,
-        "border_width": 1,
-        "border_color": THEME["border"],
-    },
+_BUTTON_STYLES = {
+    "primary": (
+        f"QPushButton {{"
+        f" background-color: {THEME['cta_dark']};"
+        f" color: {THEME['cta_dark_text']};"
+        f" border: none; border-radius: 6px; padding: 6px 14px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: #d94400; }}"
+        f"QPushButton:pressed {{ background-color: #c03d00; }}"
+        f"QPushButton:disabled {{ background-color: {THEME['bg_raised']};"
+        f" color: {THEME['text_muted']}; }}"
+    ),
+    "secondary": (
+        f"QPushButton {{"
+        f" background-color: {THEME['bg_raised']};"
+        f" color: {THEME['text_primary']};"
+        f" border: none; border-radius: 4px; padding: 6px 14px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: {THEME['bg_hover']}; }}"
+        f"QPushButton:pressed {{ background-color: {THEME['bg_surface']}; }}"
+        f"QPushButton:disabled {{ color: {THEME['text_muted']}; }}"
+    ),
+    "featured": (
+        f"QPushButton {{"
+        f" background-color: {THEME['bg_featured']};"
+        f" color: {THEME['text_strong']};"
+        f" border: 1px solid #b17816; border-radius: 6px; padding: 6px 14px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: {THEME['bg_hover']}; }}"
+    ),
+    "ghost": (
+        f"QPushButton {{"
+        f" background-color: transparent;"
+        f" color: {THEME['text_primary']};"
+        f" border: 1px solid {THEME['border']}; border-radius: 4px; padding: 6px 14px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: {THEME['bg_hover']}; }}"
+    ),
+    "danger": (
+        f"QPushButton {{"
+        f" background-color: {_DANGER_BG};"
+        f" color: #ffffff;"
+        f" border: none; border-radius: 6px; padding: 6px 14px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: {_DANGER_HOVER}; }}"
+        f"QPushButton:pressed {{ background-color: {_DANGER_PRESSED}; }}"
+        f"QPushButton:disabled {{ background-color: {THEME['bg_raised']};"
+        f" color: {THEME['text_muted']}; }}"
+    ),
 }
 
 
+class _HoverFlashFilter(QObject):
+    def __init__(self, widget: QWidget, idle: str, hover: str):
+        super().__init__(widget)
+        self._widget = widget
+        self._idle = idle
+        self._hover = hover
+
+    def eventFilter(self, obj, event):  # noqa: N802
+        if obj is not self._widget:
+            return False
+        if event.type() == QEvent.Type.Enter:
+            _set_text_color(self._widget, self._hover)
+        elif event.type() == QEvent.Type.Leave:
+            _set_text_color(self._widget, self._idle)
+        return False
+
+
 def create_button(
-    parent, text, command, variant: ButtonVariant = "primary", font=None, **overrides
-) -> ctk.CTkButton:
-    """Build a CTkButton in one of the DESIGN.md variants.
+    parent: Optional[QWidget],
+    text: str,
+    command: Optional[Callable] = None,
+    variant: ButtonVariant = "primary",
+    font=None,
+    **_overrides,
+) -> QPushButton:
+    """Build a QPushButton in one of the DESIGN.md variants.
 
-    The "orange/amber on hover" text-color flash is added via Tk binds
-    because CTk 5.2 does not support `text_color_hover` natively.
+    Variants:
+      primary  - orange CTA (Scan, Save, Capture, Upload)
+      secondary - muted raised (Refresh, Apply, secondary actions)
+      featured - gold-border accent (Save CSV, Distribute Y)
+      ghost    - outlined quiet action
+      danger   - red destructive (Clear History, Delete, Clear All)
     """
-    preset = dict(_BUTTON_VARIANTS.get(variant, _BUTTON_VARIANTS["primary"]))
-    preset.update(overrides)
+    btn = QPushButton(text, parent)
+    btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+    btn.setStyleSheet(_BUTTON_STYLES.get(variant, _BUTTON_STYLES["primary"]))
+    if font is not None:
+        btn.setFont(font)
+    if command is not None:
+        btn.clicked.connect(command)
 
-    btn = ctk.CTkButton(
-        parent,
-        text=text,
-        command=command,
-        font=font,
-        cursor="hand2",
-        **preset,
-    )
-
-    idle = preset["text_color"]
-    hover = THEME["accent_amber"] if variant == "primary" else THEME["accent_orange"]
+    if variant == "primary":
+        idle, hover = THEME["cta_dark_text"], THEME["accent_amber"]
+    elif variant == "danger":
+        idle, hover = "#ffffff", THEME["accent_amber"]
+    elif variant == "featured":
+        idle, hover = THEME["text_strong"], THEME["accent_orange"]
+    else:
+        idle, hover = THEME["text_primary"], THEME["accent_orange"]
     attach_hover_flash(btn, idle, hover)
     return btn
 
 
-def attach_hover_flash(widget, idle_color, hover_color=None):
-    """Bind orange/amber text-color flash on hover to a CTk widget or Label."""
+def attach_hover_flash(widget: QWidget, idle_color: str, hover_color: str | None = None):
+    """Flash text color on hover for labels/buttons."""
     if hover_color is None:
         hover_color = THEME["accent_orange"]
+    filt = _HoverFlashFilter(widget, idle_color, hover_color)
+    widget.installEventFilter(filt)
+    widget._hover_flash_filter = filt  # type: ignore[attr-defined]
+    _set_text_color(widget, idle_color)
 
-    def _enter(_event, w=widget, c=hover_color):
-        try:
-            w.configure(text_color=c)
-        except (tk.TclError, ValueError):
-            pass
 
-    def _leave(_event, w=widget, c=idle_color):
-        try:
-            w.configure(text_color=c)
-        except (tk.TclError, ValueError):
-            pass
-
-    widget.bind("<Enter>", _enter)
-    widget.bind("<Leave>", _leave)
+def _set_text_color(widget: QWidget, color: str) -> None:
+    pal = widget.palette()
+    qc = QColor(color)
+    if isinstance(widget, QLabel):
+        pal.setColor(QPalette.ColorRole.WindowText, qc)
+        widget.setPalette(pal)
+        widget.setStyleSheet(f"color: {color}; background: transparent;")
+        return
+    if isinstance(widget, QPushButton):
+        pal.setColor(QPalette.ColorRole.ButtonText, qc)
+        widget.setPalette(pal)

@@ -341,7 +341,7 @@ class GrowthScanner:
         status: StatusCB = None,
         on_core: CoreCB = None,
     ) -> Dict[str, int]:
-        """F10: bottom row only."""
+        """F7: bottom row only."""
         self._stop = False
         cfg = self._cfg()
         cols = int(cfg.get("cols", 14))

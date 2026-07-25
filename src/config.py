@@ -244,19 +244,20 @@ class ConfigManager:
         return self.config["inventory"]["growth"]
 
     def ensure_ui_config(self) -> None:
-        """Ensure ui.mode / ui.last_tab exist with valid values."""
+        """Ensure ui.mode / ui.last_tab / ui.always_on_top exist with valid values."""
         ui = self.config.get("ui")
         changed = False
         if not isinstance(ui, dict):
             self.config["ui"] = {
                 "mode": DEFAULT_UI["mode"],
                 "last_tab": dict(DEFAULT_UI["last_tab"]),
+                "always_on_top": DEFAULT_UI.get("always_on_top", True),
             }
             self.save_config()
             return
 
         mode = ui.get("mode")
-        if mode not in ("gunsmoke", "gacha", "inventory"):
+        if mode not in ("gunsmoke", "gacha", "inventory", "settings"):
             ui["mode"] = DEFAULT_UI["mode"]
             changed = True
 
@@ -270,8 +271,33 @@ class ConfigManager:
                     last[key] = default_tab
                     changed = True
 
+        if "always_on_top" not in ui or not isinstance(ui.get("always_on_top"), bool):
+            ui["always_on_top"] = DEFAULT_UI.get("always_on_top", True)
+            changed = True
+
         if changed:
             self.save_config()
+
+    def get_ocr_languages(self) -> list:
+        langs = self.config.get("ocr_languages")
+        if not isinstance(langs, list) or not langs:
+            return ["en"]
+        cleaned = [str(x).strip() for x in langs if str(x).strip()]
+        if "en" not in cleaned:
+            cleaned.insert(0, "en")
+        return cleaned
+
+    def set_ocr_languages(self, languages: list) -> None:
+        cleaned = [str(x).strip() for x in languages if str(x).strip()]
+        if "en" not in cleaned:
+            cleaned.insert(0, "en")
+        self.config["ocr_languages"] = cleaned
+        self.save_config()
+
+    def set_always_on_top(self, enabled: bool) -> None:
+        ui = self.get_ui()
+        ui["always_on_top"] = bool(enabled)
+        self.save_config()
 
     def get_ui(self) -> dict:
         self.ensure_ui_config()
@@ -279,14 +305,14 @@ class ConfigManager:
 
     def set_ui_mode(self, mode: str) -> None:
         ui = self.get_ui()
-        if mode not in ("gunsmoke", "gacha", "inventory"):
+        if mode not in ("gunsmoke", "gacha", "inventory", "settings"):
             return
         ui["mode"] = mode
         self.save_config()
 
     def set_ui_tab(self, mode: str, tab_id: str) -> None:
         ui = self.get_ui()
-        if mode not in ("gunsmoke", "gacha", "inventory"):
+        if mode not in ("gunsmoke", "gacha", "inventory", "settings"):
             return
         last = ui.setdefault("last_tab", {})
         last[mode] = tab_id

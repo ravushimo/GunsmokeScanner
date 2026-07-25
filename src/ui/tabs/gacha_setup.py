@@ -1,20 +1,34 @@
-import threading
-import tkinter as tk
-from tkinter import messagebox
+"""Gacha Access Records region calibration - PySide6 port."""
 
-import customtkinter as ctk
+from __future__ import annotations
+
+import threading
+
 import pyautogui
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QRadioButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.constants import GACHA_EXTRA_REGIONS, GACHA_ROW_COLUMNS, THEME
 from src.core.layouts import layout_from_gacha_config, save_layout
 from src.core.scanner import safe_grab
+from src.ui.qt_util import call_soon
 from src.ui.region_helpers import (
     FIELD_INDEX,
     bind_entry_arrow_nudge,
     distribute_ys_from_first_two,
     fill_field_across_rows,
 )
-from src.ui.styles import create_button
+from src.ui.styles import create_button, section_frame
 
 COL_LABELS = {
     "purchase_time": "Purchase Time",
@@ -30,7 +44,63 @@ EXTRA_LABELS = {
 }
 
 
-class GachaSetupTab(ctk.CTkFrame):
+def _make_label(text: str, font, color: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setFont(font)
+    lbl.setStyleSheet(f"color: {color}; background: transparent;")
+    return lbl
+
+
+def _add_coord_column(
+    parent_row: QHBoxLayout,
+    label_text: str,
+    field_name: str,
+    tab: "GachaSetupTab",
+    fill_buttons: dict,
+) -> QLineEdit:
+    """One aligned column: label+entry on top, Fill others under the entry."""
+    col = QVBoxLayout()
+    col.setSpacing(4)
+    col.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+    field_row = QHBoxLayout()
+    field_row.setSpacing(6)
+    field_row.setContentsMargins(0, 0, 0, 0)
+    lbl = _make_label(label_text, tab.fonts.ui, THEME["text_muted"])
+    lbl.setFixedWidth(52)
+    lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    field_row.addWidget(lbl)
+
+    entry = QLineEdit()
+    entry.setFixedWidth(90)
+    entry.setFont(tab.fonts.mono)
+    entry.editingFinished.connect(tab.apply_manual_values)
+    bind_entry_arrow_nudge(entry, field_name, tab.nudge_field)
+    field_row.addWidget(entry)
+    col.addLayout(field_row)
+
+    fill_btn = create_button(
+        None,
+        "Fill others",
+        lambda checked=False, f=field_name: tab.fill_field_others(f),
+        variant="ghost",
+        font=tab.fonts.caption,
+    )
+    fill_btn.setFixedSize(90, 28)
+    fill_wrap = QHBoxLayout()
+    fill_wrap.setContentsMargins(58, 0, 0, 0)
+    fill_wrap.addWidget(fill_btn)
+    fill_wrap.addStretch(1)
+    col.addLayout(fill_wrap)
+    fill_buttons[field_name] = fill_btn
+
+    wrap = QWidget()
+    wrap.setLayout(col)
+    parent_row.addWidget(wrap)
+    return entry
+
+
+class GachaSetupTab(QWidget):
     def __init__(
         self,
         parent,
@@ -41,7 +111,8 @@ class GachaSetupTab(ctk.CTkFrame):
         on_activate=None,
         on_apply_layout=None,
     ):
-        super().__init__(parent, fg_color=THEME["bg_canvas"], corner_radius=0)
+        super().__init__(parent)
+        self.setStyleSheet(f"background-color: {THEME['bg_canvas']};")
         self.config_manager = config_manager
         self.overlay_manager = overlay_manager
         self.fonts = fonts
@@ -49,337 +120,321 @@ class GachaSetupTab(ctk.CTkFrame):
         self.on_activate = on_activate
         self.on_apply_layout = on_apply_layout
 
+        self._kind = "row"
+        self._row = 0
+        self._col = "purchase_time"
+        self._extra = "page_number"
+        self._lock = "none"
+
         self.setup_ui()
 
     def activate(self):
-        """Called when this tab becomes active — switch overlay profile."""
+        """Called when this tab becomes active - switch overlay profile."""
         self.overlay_manager.on_update_callback = self.on_overlay_update
         self.overlay_manager.set_profile("gacha")
-        self.overlay_manager.set_move_lock(self.lock_var.get())
+        self.overlay_manager.set_move_lock(self._lock)
         self._sync_overlay_selection()
         if self.on_activate:
             self.on_activate()
 
     def setup_ui(self):
-        inst_frame = ctk.CTkFrame(
-            self,
-            fg_color=THEME["bg_surface"],
-            corner_radius=6,
-            border_width=1,
-            border_color=THEME["border"],
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 16, 20, 16)
+        outer.setSpacing(10)
+
+        # 1) Title + instructions
+        header = section_frame()
+        header_lay = QVBoxLayout(header)
+        header_lay.setContentsMargins(0, 0, 0, 0)
+        header_lay.setSpacing(5)
+        header_lay.addWidget(
+            _make_label(
+                "Gacha Access Records Regions",
+                self.fonts.subheading,
+                THEME["text_strong"],
+            )
         )
-        inst_frame.pack(fill=tk.X, padx=20, pady=20)
-
-        ctk.CTkLabel(
-            inst_frame,
-            text="Gacha Access Records Regions",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(anchor=tk.W, padx=15, pady=(15, 5))
-
-        ctk.CTkLabel(
-            inst_frame,
-            text=(
-                "1. Open Access Records · Show Overlay\n"
-                "2. Drag to move · edges/corner to resize\n"
+        instructions = _make_label(
+            (
+                "1. Open Access Records - Show Overlay\n"
+                "2. Drag to move - edges/corner to resize\n"
                 "3. Arrows in X/Y/W/H fields nudge that value (Shift = 10). "
                 "With Overlay on and focus outside fields, arrows move the selection.\n"
-                "4. Lock Column/Row · OCR Peek · Save Config"
+                "4. Lock Column/Row - OCR Peek - Save Config"
             ),
-            font=self.fonts.body,
-            text_color=THEME["text_primary"],
-            fg_color="transparent",
-            justify=tk.LEFT,
-        ).pack(anchor=tk.W, padx=15, pady=(0, 15))
-
-        ctrl_frame = ctk.CTkFrame(
-            self,
-            fg_color=THEME["bg_surface"],
-            corner_radius=6,
-            border_width=1,
-            border_color=THEME["border"],
+            self.fonts.body,
+            THEME["text_primary"],
         )
-        ctrl_frame.pack(fill=tk.X, padx=20, pady=(10, 5))
+        instructions.setWordWrap(True)
+        header_lay.addWidget(instructions)
+        outer.addWidget(header)
 
-        center = ctk.CTkFrame(ctrl_frame, fg_color="transparent")
-        center.pack()
+        # 2) Selection strip
+        strip = section_frame()
+        strip_lay = QHBoxLayout(strip)
+        strip_lay.setContentsMargins(0, 0, 0, 0)
+        strip_lay.addStretch(1)
 
-        kind_frame = ctk.CTkFrame(center, fg_color="transparent")
-        kind_frame.pack(side=tk.LEFT, padx=16, pady=10)
+        select_row = QHBoxLayout()
+        select_row.setSpacing(24)
+        select_row.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        ctk.CTkLabel(
-            kind_frame,
-            text="Target:",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(anchor=tk.W, pady=5)
-
-        self.kind_var = tk.StringVar(value="row")
+        kind_col = QVBoxLayout()
+        kind_col.setSpacing(2)
+        kind_col.setAlignment(Qt.AlignmentFlag.AlignTop)
+        kind_col.addWidget(_make_label("Target:", self.fonts.subheading, THEME["text_strong"]))
+        self.kind_group = QButtonGroup(self)
         for text, value in (("Table Row", "row"), ("Pagination", "extra")):
-            ctk.CTkRadioButton(
-                kind_frame,
-                text=text,
-                variable=self.kind_var,
-                value=value,
-                font=self.fonts.body,
-                text_color=THEME["text_primary"],
-                command=self.on_selection_change,
-            ).pack(anchor=tk.W, pady=2)
+            btn = QRadioButton(text)
+            btn.setFont(self.fonts.body)
+            btn.setStyleSheet(f"color: {THEME['text_primary']};")
+            btn.setChecked(value == self._kind)
+            btn.toggled.connect(
+                lambda checked, v=value: self._on_kind_toggled(v) if checked else None
+            )
+            self.kind_group.addButton(btn)
+            kind_col.addWidget(btn)
+        kind_widget = QWidget()
+        kind_widget.setLayout(kind_col)
+        select_row.addWidget(kind_widget, 0, Qt.AlignmentFlag.AlignTop)
 
-        row_frame = ctk.CTkFrame(center, fg_color="transparent")
-        row_frame.pack(side=tk.LEFT, padx=16, pady=10)
-
-        ctk.CTkLabel(
-            row_frame,
-            text="Row:",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(anchor=tk.W, pady=5)
-
-        self.row_var = tk.IntVar(value=0)
+        row_col = QVBoxLayout()
+        row_col.setSpacing(2)
+        row_col.setAlignment(Qt.AlignmentFlag.AlignTop)
+        row_col.addWidget(_make_label("Row:", self.fonts.subheading, THEME["text_strong"]))
+        self.row_group = QButtonGroup(self)
         for i in range(6):
-            ctk.CTkRadioButton(
-                row_frame,
-                text=f"Row {i + 1}",
-                variable=self.row_var,
-                value=i,
-                font=self.fonts.body,
-                text_color=THEME["text_primary"],
-                command=self.on_selection_change,
-            ).pack(anchor=tk.W, pady=2)
+            btn = QRadioButton(f"Row {i + 1}")
+            btn.setFont(self.fonts.body)
+            btn.setStyleSheet(f"color: {THEME['text_primary']};")
+            btn.setChecked(i == self._row)
+            btn.toggled.connect(
+                lambda checked, v=i: self._on_row_toggled(v) if checked else None
+            )
+            self.row_group.addButton(btn)
+            row_col.addWidget(btn)
+        row_widget = QWidget()
+        row_widget.setLayout(row_col)
+        select_row.addWidget(row_widget, 0, Qt.AlignmentFlag.AlignTop)
 
-        col_frame = ctk.CTkFrame(center, fg_color="transparent")
-        col_frame.pack(side=tk.LEFT, padx=16, pady=10)
-
-        ctk.CTkLabel(
-            col_frame,
-            text="Column / Control:",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(anchor=tk.W, pady=5)
-
-        self.col_var = tk.StringVar(value="purchase_time")
-        self.extra_var = tk.StringVar(value="page_number")
-
-        self.col_buttons = []
+        col_col = QVBoxLayout()
+        col_col.setSpacing(2)
+        col_col.setAlignment(Qt.AlignmentFlag.AlignTop)
+        col_col.addWidget(
+            _make_label("Column / Control:", self.fonts.subheading, THEME["text_strong"])
+        )
+        self.col_group = QButtonGroup(self)
+        self.col_buttons = {}
         for key in GACHA_ROW_COLUMNS:
-            btn = ctk.CTkRadioButton(
-                col_frame,
-                text=COL_LABELS[key],
-                variable=self.col_var,
-                value=key,
-                font=self.fonts.body,
-                text_color=THEME["text_primary"],
-                command=self.on_selection_change,
+            btn = QRadioButton(COL_LABELS[key])
+            btn.setFont(self.fonts.body)
+            btn.setStyleSheet(f"color: {THEME['text_primary']};")
+            btn.setChecked(key == self._col)
+            btn.toggled.connect(
+                lambda checked, v=key: self._on_col_toggled(v) if checked else None
             )
-            btn.pack(anchor=tk.W, pady=2)
-            self.col_buttons.append(btn)
+            self.col_group.addButton(btn)
+            col_col.addWidget(btn)
+            self.col_buttons[key] = btn
 
-        self.extra_buttons = []
+        self.extra_group = QButtonGroup(self)
+        self.extra_buttons = {}
         for key in GACHA_EXTRA_REGIONS:
-            btn = ctk.CTkRadioButton(
-                col_frame,
-                text=EXTRA_LABELS[key],
-                variable=self.extra_var,
-                value=key,
-                font=self.fonts.body,
-                text_color=THEME["text_primary"],
-                command=self.on_selection_change,
+            btn = QRadioButton(EXTRA_LABELS[key])
+            btn.setFont(self.fonts.body)
+            btn.setStyleSheet(f"color: {THEME['text_primary']};")
+            btn.setChecked(key == self._extra)
+            btn.toggled.connect(
+                lambda checked, v=key: self._on_extra_toggled(v) if checked else None
             )
-            self.extra_buttons.append(btn)
+            self.extra_group.addButton(btn)
+            col_col.addWidget(btn)
+            btn.setVisible(False)
+            self.extra_buttons[key] = btn
+        col_widget = QWidget()
+        col_widget.setLayout(col_col)
+        select_row.addWidget(col_widget, 0, Qt.AlignmentFlag.AlignTop)
 
-        lock_frame = ctk.CTkFrame(center, fg_color="transparent")
-        lock_frame.pack(side=tk.LEFT, padx=16, pady=10)
-
-        ctk.CTkLabel(
-            lock_frame,
-            text="Move Lock:",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(anchor=tk.W, pady=5)
-
-        self.lock_var = tk.StringVar(value="none")
+        lock_col = QVBoxLayout()
+        lock_col.setSpacing(2)
+        lock_col.setAlignment(Qt.AlignmentFlag.AlignTop)
+        lock_col.addWidget(
+            _make_label("Move Lock:", self.fonts.subheading, THEME["text_strong"])
+        )
+        self.lock_group = QButtonGroup(self)
         for text, value in (
             ("Off", "none"),
             ("Whole Column", "column"),
             ("Whole Row", "row"),
         ):
-            ctk.CTkRadioButton(
-                lock_frame,
-                text=text,
-                variable=self.lock_var,
-                value=value,
-                font=self.fonts.body,
-                text_color=THEME["text_primary"],
-                command=self.on_lock_change,
-            ).pack(anchor=tk.W, pady=2)
+            btn = QRadioButton(text)
+            btn.setFont(self.fonts.body)
+            btn.setStyleSheet(f"color: {THEME['text_primary']};")
+            btn.setChecked(value == self._lock)
+            btn.toggled.connect(
+                lambda checked, v=value: self._on_lock_toggled(v) if checked else None
+            )
+            self.lock_group.addButton(btn)
+            lock_col.addWidget(btn)
+        lock_widget = QWidget()
+        lock_widget.setLayout(lock_col)
+        select_row.addWidget(lock_widget, 0, Qt.AlignmentFlag.AlignTop)
 
-        info_frame = ctk.CTkFrame(
-            self,
-            fg_color=THEME["bg_surface"],
-            corner_radius=6,
-            border_width=1,
-            border_color=THEME["border"],
-        )
-        info_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(5, 15))
+        strip_lay.addLayout(select_row)
+        strip_lay.addStretch(1)
+        outer.addWidget(strip)
 
-        ctk.CTkLabel(
-            info_frame,
-            text="Current Region (editable)",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(pady=(15, 10))
+        # 3) Editor section
+        editor = section_frame()
+        editor_lay = QVBoxLayout(editor)
+        editor_lay.setContentsMargins(0, 0, 0, 0)
+        editor_lay.setSpacing(6)
 
-        fields_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
-        fields_frame.pack(pady=(10, 10))
+        title_lbl = _make_label("Current region", self.fonts.subheading, THEME["text_strong"])
+        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        editor_lay.addWidget(title_lbl)
 
+        coords_row = QHBoxLayout()
+        coords_row.addStretch(1)
+        coords_inner = QHBoxLayout()
+        coords_inner.setSpacing(12)
         self.region_entries = {}
         self.fill_buttons = {}
-        for label_text, field_name, row, col in (
-            ("X:", "x", 0, 0),
-            ("Y:", "y", 0, 1),
-            ("Width:", "w", 1, 0),
-            ("Height:", "h", 1, 1),
+        for label_text, field_name in (
+            ("X:", "x"),
+            ("Y:", "y"),
+            ("Width:", "w"),
+            ("Height:", "h"),
         ):
-            field_container = ctk.CTkFrame(fields_frame, fg_color="transparent")
-            field_container.grid(row=row, column=col, padx=15, pady=8)
-            ctk.CTkLabel(
-                field_container,
-                text=label_text,
-                text_color=THEME["text_muted"],
-                fg_color="transparent",
-                font=self.fonts.ui,
-                width=60,
-                anchor=tk.E,
-            ).pack(side=tk.LEFT, padx=(0, 8))
-            entry = ctk.CTkEntry(field_container, width=90, font=self.fonts.mono)
-            entry.pack(side=tk.LEFT)
-            entry.bind("<Return>", self.apply_manual_values)
-            entry.bind("<FocusOut>", self.apply_manual_values)
-            bind_entry_arrow_nudge(entry, field_name, self.nudge_field)
-            self.region_entries[field_name] = entry
-
-            fill_btn = create_button(
-                field_container,
-                "Fill others",
-                lambda f=field_name: self.fill_field_others(f),
-                variant="ghost",
-                font=self.fonts.caption,
-                width=90,
-                height=28,
+            self.region_entries[field_name] = _add_coord_column(
+                coords_inner, label_text, field_name, self, self.fill_buttons
             )
-            fill_btn.pack(side=tk.LEFT, padx=(6, 0))
-            self.fill_buttons[field_name] = fill_btn
+        coords_row.addLayout(coords_inner)
+        coords_row.addStretch(1)
+        editor_lay.addLayout(coords_row)
 
-        ctk.CTkLabel(
-            info_frame,
-            text=(
-                "Fill others → same column all rows.  "
-                "Distribute Y → space selected column from Row 1–2 only.  "
-                "OCR Peek → one-region test (cheap)."
-            ),
-            font=self.fonts.caption,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-        ).pack(pady=(0, 4))
-
-        self.peek_label = ctk.CTkLabel(
-            info_frame,
-            text="OCR Peek: —",
-            font=self.fonts.mono,
-            text_color=THEME["text_primary"],
-            fg_color=THEME["bg_raised"],
-            corner_radius=4,
-            anchor=tk.W,
-            justify=tk.LEFT,
+        self.peek_label = QLabel("OCR Peek: -")
+        self.peek_label.setFont(self.fonts.mono)
+        self.peek_label.setWordWrap(True)
+        self.peek_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
-        self.peek_label.pack(fill=tk.X, padx=15, pady=(4, 8))
+        self.peek_label.setMaximumHeight(64)
+        self.peek_label.setStyleSheet(
+            f"color: {THEME['text_primary']}; background: transparent;"
+            f" border: 1px solid {THEME['border']}; border-radius: 4px; padding: 4px 8px;"
+        )
+        editor_lay.addWidget(self.peek_label)
 
-        action_row = ctk.CTkFrame(info_frame, fg_color="transparent")
-        action_row.pack(pady=(5, 15))
-
-        create_button(
-            action_row,
-            "Apply Changes",
-            self.apply_manual_values,
-            variant="secondary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
+        action_row = QHBoxLayout()
+        action_row.addStretch(1)
+        action_row.addWidget(
+            create_button(
+                None,
+                "Apply Changes",
+                self.apply_manual_values,
+                variant="secondary",
+                font=self.fonts.ui,
+            )
+        )
         self.distribute_btn = create_button(
-            action_row,
-            "Distribute Y from Row 1–2",
+            None,
+            "Distribute Y from Row 1-2",
             self.distribute_y,
             variant="featured",
             font=self.fonts.ui,
         )
-        self.distribute_btn.pack(side=tk.LEFT, padx=5)
-        create_button(
-            action_row,
-            "OCR Peek",
-            self.ocr_peek,
-            variant="ghost",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
+        action_row.addWidget(self.distribute_btn)
+        action_row.addWidget(
+            create_button(
+                None,
+                "OCR Peek",
+                self.ocr_peek,
+                variant="secondary",
+                font=self.fonts.ui,
+            )
+        )
+        action_row.addStretch(1)
+        editor_lay.addLayout(action_row)
+        editor_lay.addStretch(1)
 
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(pady=20)
-        create_button(
-            btn_frame,
-            "Save Config",
-            self.save_config,
-            variant="primary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
-        create_button(
-            btn_frame,
-            "Save as layout template",
-            self.save_layout_template,
-            variant="secondary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
-        create_button(
-            btn_frame,
-            "Apply layout (F4)",
-            self.apply_layout_f4,
-            variant="ghost",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
+        outer.addWidget(editor, stretch=1)
+
+        # 4) Bottom action row
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_row.addWidget(
+            create_button(
+                None,
+                "Save Config",
+                self.save_config,
+                variant="primary",
+                font=self.fonts.ui,
+            )
+        )
+        btn_row.addWidget(
+            create_button(
+                None,
+                "Save as layout template",
+                self.save_layout_template,
+                variant="featured",
+                font=self.fonts.ui,
+            )
+        )
+        btn_row.addWidget(
+            create_button(
+                None,
+                "Apply layout (F4)",
+                self.apply_layout_f4,
+                variant="ghost",
+                font=self.fonts.ui,
+            )
+        )
+        btn_row.addStretch(1)
+        outer.addLayout(btn_row)
 
         self._sync_kind_widgets()
         self.update_region_info()
 
+    def _on_kind_toggled(self, value: str):
+        self._kind = value
+        self.on_selection_change()
+
+    def _on_row_toggled(self, value: int):
+        self._row = value
+        self.on_selection_change()
+
+    def _on_col_toggled(self, value: str):
+        self._col = value
+        self.on_selection_change()
+
+    def _on_extra_toggled(self, value: str):
+        self._extra = value
+        self.on_selection_change()
+
+    def _on_lock_toggled(self, value: str):
+        self._lock = value
+        self.on_lock_change()
+
     def on_lock_change(self):
-        self.overlay_manager.set_move_lock(self.lock_var.get())
+        self.overlay_manager.set_move_lock(self._lock)
 
     def _sync_kind_widgets(self):
-        is_row = self.kind_var.get() == "row"
-        for btn in self.col_buttons:
-            if is_row:
-                btn.pack(anchor=tk.W, pady=2)
-            else:
-                btn.pack_forget()
-        for btn in self.extra_buttons:
-            if is_row:
-                btn.pack_forget()
-            else:
-                btn.pack(anchor=tk.W, pady=2)
+        is_row = self._kind == "row"
+        for btn in self.col_buttons.values():
+            btn.setVisible(is_row)
+        for btn in self.extra_buttons.values():
+            btn.setVisible(not is_row)
 
-        fill_state = "normal" if is_row else "disabled"
         for btn in self.fill_buttons.values():
-            btn.configure(state=fill_state)
+            btn.setEnabled(is_row)
         if hasattr(self, "distribute_btn"):
-            self.distribute_btn.configure(state=fill_state)
+            self.distribute_btn.setEnabled(is_row)
 
     def _current_target(self):
-        if self.kind_var.get() == "extra":
-            return None, self.extra_var.get()
-        return self.row_var.get(), self.col_var.get()
+        if self._kind == "extra":
+            return None, self._extra
+        return self._row, self._col
 
     def _sync_overlay_selection(self):
         row_idx, col = self._current_target()
@@ -394,15 +449,23 @@ class GachaSetupTab(ctk.CTkFrame):
         self.update_region_info()
         self._sync_overlay_selection()
 
+    def _set_checked_silent(self, btn):
+        btn.blockSignals(True)
+        btn.setChecked(True)
+        btn.blockSignals(False)
+
     def on_overlay_update(self, row_idx, col_name, select=False):
         if select:
             if row_idx is None:
-                self.kind_var.set("extra")
-                self.extra_var.set(col_name)
+                self._kind = "extra"
+                self._extra = col_name
+                self._set_checked_silent(self.extra_buttons[col_name])
             else:
-                self.kind_var.set("row")
-                self.row_var.set(row_idx)
-                self.col_var.set(col_name)
+                self._kind = "row"
+                self._row = row_idx
+                self._col = col_name
+                self._set_checked_silent(self.row_group.buttons()[row_idx])
+                self._set_checked_silent(self.col_buttons[col_name])
             self._sync_kind_widgets()
 
         current_row, current_col = self._current_target()
@@ -428,15 +491,14 @@ class GachaSetupTab(ctk.CTkFrame):
     def update_region_info(self):
         bbox = self.get_current_bbox()
         for idx, key in enumerate(("x", "y", "w", "h")):
-            self.region_entries[key].delete(0, tk.END)
-            self.region_entries[key].insert(0, str(bbox[idx]))
+            self.region_entries[key].setText(str(bbox[idx]))
 
-    def apply_manual_values(self, _event=None):
+    def apply_manual_values(self):
         try:
-            x = int(self.region_entries["x"].get())
-            y = int(self.region_entries["y"].get())
-            w = int(self.region_entries["w"].get())
-            h = int(self.region_entries["h"].get())
+            x = int(self.region_entries["x"].text())
+            y = int(self.region_entries["y"].text())
+            w = int(self.region_entries["w"].text())
+            h = int(self.region_entries["h"].text())
             self.set_current_bbox([x, y, w, h])
             self._refresh_overlays()
         except ValueError:
@@ -453,7 +515,7 @@ class GachaSetupTab(ctk.CTkFrame):
                 return
 
         try:
-            value = int(self.region_entries[field].get())
+            value = int(self.region_entries[field].text())
         except ValueError:
             value = int(self.get_current_bbox()[FIELD_INDEX[field]])
         new_val = value + delta
@@ -467,28 +529,29 @@ class GachaSetupTab(ctk.CTkFrame):
         self._refresh_overlays()
 
     def fill_field_others(self, field: str):
-        if self.kind_var.get() != "row":
+        if self._kind != "row":
             return
         try:
-            value = int(self.region_entries[field].get())
+            value = int(self.region_entries[field].text())
         except ValueError:
             return
         self.apply_manual_values()
-        col = self.col_var.get()
+        col = self._col
         rows = self.config_manager.get_gacha().get("rows", [])
         fill_field_across_rows(rows, col, field, value)
         self.update_region_info()
         self._refresh_overlays()
 
     def distribute_y(self):
-        if self.kind_var.get() != "row":
+        if self._kind != "row":
             return
         self.apply_manual_values()
-        col = self.col_var.get()
+        col = self._col
         rows = self.config_manager.get_gacha().get("rows", [])
         gap = distribute_ys_from_first_two(rows, col, sync_all_columns=False)
         if gap is None:
-            messagebox.showwarning(
+            QMessageBox.warning(
+                self,
                 "Distribute Y",
                 "Align Row 1 and Row 2 first (different Y values required).",
             )
@@ -498,10 +561,10 @@ class GachaSetupTab(ctk.CTkFrame):
 
     def ocr_peek(self):
         if self.ocr_processor is None:
-            messagebox.showwarning("OCR Peek", "OCR is not available.")
+            QMessageBox.warning(self, "OCR Peek", "OCR is not available.")
             return
         self.apply_manual_values()
-        self.peek_label.configure(text="OCR Peek: reading…")
+        self.peek_label.setText("OCR Peek: reading...")
         was_active = self.overlay_manager.active
         if was_active:
             self.overlay_manager.hide()
@@ -518,12 +581,12 @@ class GachaSetupTab(ctk.CTkFrame):
                 display = text if text else "(empty)"
             except Exception as e:
                 display = f"Error: {e}"
-            self.after(0, lambda: self._on_peek_done(display, was_active))
+            call_soon(lambda: self._on_peek_done(display, was_active))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_peek_done(self, text: str, restore_overlays: bool):
-        self.peek_label.configure(text=f"OCR Peek: {text}")
+        self.peek_label.setText(f"OCR Peek: {text}")
         if restore_overlays:
             self.overlay_manager.show()
             self._sync_overlay_selection()
@@ -531,9 +594,9 @@ class GachaSetupTab(ctk.CTkFrame):
     def save_config(self):
         self.overlay_manager.hide()
         if self.config_manager.save_config():
-            messagebox.showinfo("Success", "Gacha configuration saved!")
+            QMessageBox.information(self, "Success", "Gacha configuration saved!")
         else:
-            messagebox.showerror("Error", "Failed to save configuration")
+            QMessageBox.critical(self, "Error", "Failed to save configuration")
 
     def save_layout_template(self):
         """Export current gacha regions as a bundled layout for this screen size."""
@@ -544,9 +607,10 @@ class GachaSetupTab(ctk.CTkFrame):
         try:
             path = save_layout(layout)
         except OSError as e:
-            messagebox.showerror("Error", f"Could not write layout:\n{e}")
+            QMessageBox.critical(self, "Error", f"Could not write layout:\n{e}")
             return
-        messagebox.showinfo(
+        QMessageBox.information(
+            self,
             "Layout saved",
             f"Saved gacha template for {width}x{height}:\n{path}",
         )
@@ -555,4 +619,6 @@ class GachaSetupTab(ctk.CTkFrame):
         if self.on_apply_layout:
             self.on_apply_layout()
         else:
-            messagebox.showwarning("Layout", "Apply layout is not wired in this build.")
+            QMessageBox.warning(
+                self, "Layout", "Apply layout is not wired in this build."
+            )

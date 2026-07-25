@@ -23,7 +23,7 @@ def detect_ocr_device() -> Tuple[bool, str]:
             return True, f"CUDA ({name})"
         build = getattr(torch.version, "cuda", None)
         if build is None:
-            return False, "CPU (torch is CPU-only build — run scripts/ensure_torch.py)"
+            return False, "CPU (torch is CPU-only build - run scripts/ensure_torch.py)"
         return False, "CPU (CUDA build present but no GPU visible)"
     except Exception as e:
         return False, f"CPU (torch check failed: {e})"
@@ -32,18 +32,34 @@ def detect_ocr_device() -> Tuple[bool, str]:
 class OCRProcessor:
     def __init__(self, languages: List[str] = None):
         if languages is None:
-            languages = ["ch_sim", "en"]
+            languages = ["en"]
+        self.languages = list(languages)
+        self.use_gpu = False
+        self.reader = None
+        self._load_reader(self.languages)
 
+    def _load_reader(self, languages: List[str]) -> None:
         use_gpu, device_label = detect_ocr_device()
         print("Loading EasyOCR models...")
+        print(f"EasyOCR languages: {languages}")
         print(f"EasyOCR device: {device_label}")
         self.use_gpu = use_gpu
+        self.languages = list(languages)
         self.reader = easyocr.Reader(
-            languages,
+            self.languages,
             gpu=use_gpu,
             model_storage_directory="./easyocr_models",
         )
         print("EasyOCR ready!")
+
+    def set_languages(self, languages: List[str]) -> None:
+        """Rebuild the EasyOCR reader with a new language list (may download models)."""
+        langs = [str(x).strip() for x in languages if str(x).strip()]
+        if "en" not in langs:
+            langs.insert(0, "en")
+        if langs == self.languages and self.reader is not None:
+            return
+        self._load_reader(langs)
 
     def preprocess_image(
         self, img: np.ndarray, config: dict = None

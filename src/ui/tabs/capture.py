@@ -1,19 +1,49 @@
-import threading
-import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+"""Gunsmoke leaderboard capture tab (PySide6)."""
 
-import customtkinter as ctk
+import threading
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.constants import THEME
 from src.core.scanner import safe_grab
 from src.data.models import PlayerScore
 from src.data.storage import save_to_csv
-from src.ui.styles import create_button
+from src.ui.qt_util import call_soon
+from src.ui.styles import (
+    configure_stretch_table,
+    create_button,
+    stat_strip,
+    toolbar_frame,
+)
+
+COLUMNS = ("Season", "IGN (Nickname)", "Single High Score", "Total Score")
+FIELD_BY_COLUMN = ("season", "ign", "topscore", "totalscore")
 
 
-class CaptureTab(ctk.CTkFrame):
+def _make_label(text: str, font, color: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setFont(font)
+    lbl.setStyleSheet(f"color: {color}; background: transparent;")
+    return lbl
+
+
+class CaptureTab(QWidget):
     def __init__(self, parent, config_manager, ocr_processor, season_manager, fonts):
-        super().__init__(parent, fg_color=THEME["bg_canvas"], corner_radius=0)
+        super().__init__(parent)
+        self.setStyleSheet(f"background-color: {THEME['bg_canvas']};")
         self.config_manager = config_manager
         self.ocr_processor = ocr_processor
         self.season_num = season_manager.season_num
@@ -26,147 +56,106 @@ class CaptureTab(ctk.CTkFrame):
         self.capture_count = 0
         self.is_capturing = False
 
-        self.edit_entry = None
-        self.editing_item = None
-
         self.setup_ui()
 
     def setup_ui(self):
-        # Control panel
-        ctrl_frame = ctk.CTkFrame(
-            self,
-            fg_color=THEME["bg_surface"],
-            corner_radius=6,
-            border_width=1,
-            border_color=THEME["border"],
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 16, 20, 12)
+        outer.setSpacing(8)
+
+        ctrl_frame = toolbar_frame()
+        ctrl_layout = QVBoxLayout(ctrl_frame)
+        ctrl_layout.setContentsMargins(12, 10, 12, 10)
+        ctrl_layout.setSpacing(8)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_row.addWidget(
+            create_button(
+                None,
+                "Capture (F9)",
+                self.start_capture_thread,
+                variant="primary",
+                font=self.fonts.ui,
+            )
         )
-        ctrl_frame.pack(fill=tk.X, padx=20, pady=20)
-
-        btn_container = ctk.CTkFrame(ctrl_frame, fg_color="transparent")
-        btn_container.pack(pady=15)
-
-        create_button(
-            btn_container,
-            "Set Season",
-            self.set_season_dialog,
-            variant="secondary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
-        create_button(
-            btn_container,
-            "Capture (F9)",
-            self.start_capture_thread,
-            variant="primary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
-        create_button(
-            btn_container,
-            "Clear All",
-            self.clear_all,
-            variant="secondary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
-        create_button(
-            btn_container,
-            "Save to CSV",
-            self.save_data,
-            variant="featured",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
-
-        # Stats
-        stats_frame = ctk.CTkFrame(self, fg_color=THEME["bg_raised"], corner_radius=4)
-        stats_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
-
-        self.stats_label = ctk.CTkLabel(
-            stats_frame,
-            text="Total Players: 0 | Captures: 0",
-            font=self.fonts.body_medium,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
+        btn_row.addWidget(
+            create_button(
+                None,
+                "Set Season",
+                self.set_season_dialog,
+                variant="secondary",
+                font=self.fonts.ui,
+            )
         )
-        self.stats_label.pack(pady=10)
-
-        # Data table - ttk.Treeview restyled via the Custom.Treeview ttk style
-        table_container = ctk.CTkFrame(
-            self,
-            fg_color=THEME["bg_canvas"],
-            corner_radius=4,
-            border_width=1,
-            border_color=THEME["border"],
+        btn_row.addWidget(
+            create_button(
+                None, "Save to CSV", self.save_data, variant="featured", font=self.fonts.ui
+            )
         )
-        table_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
-
-        columns = ("Season", "IGN", "Top Score", "Total Score")
-        self.tree = ttk.Treeview(
-            table_container,
-            columns=columns,
-            show="headings",
-            height=20,
-            style="Custom.Treeview",
+        btn_row.addWidget(
+            create_button(
+                None, "Clear All", self.clear_all, variant="danger", font=self.fonts.ui
+            )
         )
+        btn_row.addStretch(1)
+        ctrl_layout.addLayout(btn_row)
+        outer.addWidget(ctrl_frame)
 
-        self.tree.heading("Season", text="Season")
-        self.tree.heading("IGN", text="IGN (Nickname)")
-        self.tree.heading("Top Score", text="Single High Score")
-        self.tree.heading("Total Score", text="Total Score")
-
-        self.tree.column("Season", width=80, anchor=tk.CENTER)
-        self.tree.column("IGN", width=250)
-        self.tree.column("Top Score", width=120, anchor=tk.E)
-        self.tree.column("Total Score", width=120, anchor=tk.E)
-
-        scrollbar = ctk.CTkScrollbar(table_container, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4, pady=4)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 4), pady=4)
-
-        self.tree.bind("<Double-1>", self.on_cell_double_click)
-
-        # Status bar
-        status_frame = ctk.CTkFrame(
-            self, fg_color=THEME["bg_surface"], corner_radius=0, height=30
+        stats_frame = stat_strip()
+        stats_layout = QVBoxLayout(stats_frame)
+        stats_layout.setContentsMargins(12, 8, 12, 8)
+        self.stats_label = _make_label(
+            "Total Players: 0 | Captures: 0", self.fonts.body_medium, THEME["text_strong"]
         )
-        status_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        status_frame.pack_propagate(False)
+        self.stats_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        stats_layout.addWidget(self.stats_label)
+        outer.addWidget(stats_frame)
 
-        self.status_label = ctk.CTkLabel(
-            status_frame,
-            text="Ready. Press F9 to capture.",
-            font=self.fonts.caption,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
+        self.table = QTableWidget(0, len(COLUMNS))
+        self.table.setHorizontalHeaderLabels(list(COLUMNS))
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
         )
-        self.status_label.pack(pady=6)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        configure_stretch_table(
+            self.table, stretch=1, min_widths=[80, 250, 120, 120]
+        )
+        self.table.itemChanged.connect(self.on_item_changed)
+        outer.addWidget(self.table, stretch=1)
+
+        self.status_label = _make_label(
+            "Ready. Press F9 to capture.", self.fonts.caption, THEME["text_muted"]
+        )
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setFixedHeight(28)
+        outer.addWidget(self.status_label)
 
     def set_season_dialog(self):
         current = self.season_num if self.season_num else 1
-        new_season = simpledialog.askinteger(
-            "Override Season",
-            "Enter season number:",
-            initialvalue=current,
-            minvalue=1,
-            maxvalue=999,
+        new_season, ok = QInputDialog.getInt(
+            self, "Override Season", "Enter season number:", current, 1, 999
         )
-        if new_season:
+        if ok and new_season:
             self.season_num = new_season
             if hasattr(self.season_manager, "set_manual_season"):
                 self.season_manager.set_manual_season(new_season)
-            self.status_label.configure(text=f"Season set to {new_season}")
+            self.status_label.setText(f"Season set to {new_season}")
 
-    def start_capture_thread(self, _event=None):
+    def start_capture_thread(self, _checked=None):
         if self.is_capturing:
             return
 
         if self.season_num is None:
-            messagebox.showwarning(
-                "Season Not Set", "Please set the season number first!"
+            QMessageBox.warning(
+                self, "Season Not Set", "Please set the season number first!"
             )
             return
 
         self.is_capturing = True
-        self.status_label.configure(text="Capturing... (Processing)")
+        self.status_label.setText("Capturing... (Processing)")
 
         threading.Thread(target=self._capture_logic, daemon=True).start()
 
@@ -213,14 +202,12 @@ class CaptureTab(ctk.CTkFrame):
                         )
                     )
 
-            self.after(0, lambda: self._on_capture_complete(batch))
+            call_soon(lambda: self._on_capture_complete(batch))
 
         except Exception as e:
             print(f"Capture error: {e}")
             err = str(e)
-            self.after(
-                0, lambda msg=err: self.status_label.configure(text=f"Error: {msg}")
-            )
+            call_soon(lambda msg=err: self.status_label.setText(f"Error: {msg}"))
             self.is_capturing = False
 
     def _on_capture_complete(self, batch):
@@ -235,166 +222,136 @@ class CaptureTab(ctk.CTkFrame):
 
         self.refresh_table()
 
-        self.stats_label.configure(
-            text=f"Total Players: {len(self.captured_data)} | Captures: {self.capture_count}"
+        self.stats_label.setText(
+            f"Total Players: {len(self.captured_data)} | Captures: {self.capture_count}"
         )
-        self.status_label.configure(text=f"Captured {len(batch)} new players.")
+        self.status_label.setText(f"Captured {len(batch)} new players.")
         self.is_capturing = False
 
     def refresh_table(self):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        for player in self.captured_data:
-            self.tree.insert(
-                "",
-                tk.END,
-                values=(
-                    player["season"],
-                    player["ign"],
-                    f"{player['topscore']:,}",
-                    f"{player['totalscore']:,}",
-                ),
+        self.table.blockSignals(True)
+        self.table.setRowCount(len(self.captured_data))
+        for row, player in enumerate(self.captured_data):
+            values = (
+                str(player["season"]),
+                player["ign"],
+                f"{player['topscore']:,}",
+                f"{player['totalscore']:,}",
             )
+            for col, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                if col == 0:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                elif col in (2, 3):
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
+                self.table.setItem(row, col, item)
+        self.table.blockSignals(False)
+
+    def on_item_changed(self, item: QTableWidgetItem):
+        """Native QTableWidget in-place editing replaces the old Tk cell-overlay hack."""
+        row = item.row()
+        col = item.column()
+        if row >= len(self.captured_data):
+            return
+
+        field = FIELD_BY_COLUMN[col]
+        new_val = item.text()
+        try:
+            if field in ("season", "topscore", "totalscore"):
+                val = int(new_val.replace(",", ""))
+            else:
+                val = new_val
+            self.captured_data[row][field] = val
+        except ValueError:
+            pass
+        self.refresh_table()
 
     def clear_all(self):
-        if messagebox.askyesno("Clear All", "Clear all captured data?"):
+        reply = QMessageBox.question(
+            self,
+            "Clear All",
+            "Delete all captured data?\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
             self.captured_data = []
             self.refresh_table()
-            self.stats_label.configure(text="Total Players: 0 | Captures: 0")
+            self.stats_label.setText("Total Players: 0 | Captures: 0")
 
     def save_data(self):
         if not self.captured_data:
             return
 
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Save CSV - Optional Guild Rank")
-        dialog.geometry("420x200")
-        dialog.configure(fg_color=THEME["bg_canvas"])
-        dialog.resizable(False, False)
+        dialog = QDialog(self.window())
+        dialog.setWindowTitle("Save CSV - Optional Guild Rank")
+        dialog.setFixedSize(420, 200)
+        dialog.setStyleSheet(f"background-color: {THEME['bg_canvas']};")
+        dialog.setModal(True)
 
-        dialog.transient(self.winfo_toplevel())
-        dialog.grab_set()
-        x = self.winfo_rootx() + (self.winfo_width() // 2) - 210
-        y = self.winfo_rooty() + (self.winfo_height() // 2) - 100
-        dialog.geometry(f"+{x}+{y}")
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 15)
+        layout.setSpacing(8)
 
-        ctk.CTkLabel(
-            dialog,
-            text="Add Guild Rank (Optional)",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(pady=(20, 5))
+        title = _make_label(
+            "Add Guild Rank (Optional)", self.fonts.subheading, THEME["text_strong"]
+        )
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
 
-        ctk.CTkLabel(
-            dialog,
-            text="Enter rank to include it in the file:",
-            font=self.fonts.body,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-        ).pack(pady=(0, 10))
+        subtitle = _make_label(
+            "Enter rank to include it in the file:", self.fonts.body, THEME["text_muted"]
+        )
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(subtitle)
 
-        entry = ctk.CTkEntry(dialog, font=self.fonts.mono, width=120, justify="center")
-        entry.pack(pady=5)
-        entry.focus_set()
-
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(pady=15)
+        entry = QLineEdit()
+        entry.setFont(self.fonts.mono)
+        entry.setFixedWidth(120)
+        entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        entry_row = QHBoxLayout()
+        entry_row.addStretch(1)
+        entry_row.addWidget(entry)
+        entry_row.addStretch(1)
+        layout.addLayout(entry_row)
 
         result_rank = [None]
 
         def on_update():
-            rank = entry.get().strip()
+            rank = entry.text().strip()
             if rank:
                 result_rank[0] = rank
-            dialog.destroy()
+            dialog.accept()
 
         def on_skip():
-            dialog.destroy()
+            dialog.reject()
 
-        create_button(
-            btn_frame,
-            "Update Rank (Enter)",
-            on_update,
-            variant="primary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
-        create_button(
-            btn_frame,
-            "No, Just Save (Esc)",
-            on_skip,
-            variant="secondary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT, padx=5)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_row.addWidget(
+            create_button(
+                None, "Update Rank (Enter)", on_update, variant="primary", font=self.fonts.ui
+            )
+        )
+        btn_row.addWidget(
+            create_button(
+                None,
+                "No, Just Save (Esc)",
+                on_skip,
+                variant="secondary",
+                font=self.fonts.ui,
+            )
+        )
+        btn_row.addStretch(1)
+        layout.addLayout(btn_row)
 
-        dialog.bind("<Return>", lambda _e: on_update())
-        dialog.bind("<Escape>", lambda _e: on_skip())
+        entry.returnPressed.connect(on_update)
+        entry.setFocus()
 
-        self.wait_window(dialog)
+        dialog.exec()
 
         models = [PlayerScore(**d) for d in self.captured_data]
         filename = save_to_csv(models, self.season_num, guild_rank=result_rank[0])
-        messagebox.showinfo("Saved", f"Data saved to {filename}")
-
-    # Inline editing for the Treeview - the Entry is placed over the cell bbox.
-    # This is the same fragile pattern as before; PySide6 would replace it.
-    def on_cell_double_click(self, event):
-        item = self.tree.identify_row(event.y)
-        column = self.tree.identify_column(event.x)
-        if not item or not column:
-            return
-
-        x, y, w, h = self.tree.bbox(item, column)
-
-        self.editing_item = item
-        col_idx = int(column.replace("#", "")) - 1
-        self.editing_col = ["season", "ign", "topscore", "totalscore"][col_idx]
-        self.editing_row_idx = self.tree.index(item)
-
-        current_val = self.captured_data[self.editing_row_idx][self.editing_col]
-
-        # Use a plain tk.Entry - CTkEntry's wrapper Frame interferes with the
-        # pixel-precise overlay positioning needed for inline cell editing.
-        self.edit_entry = tk.Entry(
-            self.tree,
-            bg=THEME["bg_surface"],
-            fg=THEME["text_input"],
-            insertbackground=THEME["text_input"],
-            relief=tk.FLAT,
-            highlightthickness=1,
-            highlightbackground=THEME["accent_orange"],
-            highlightcolor=THEME["accent_orange"],
-        )
-        self.edit_entry.place(x=x, y=y, width=w, height=h)
-        self.edit_entry.insert(0, str(current_val))
-        self.edit_entry.select_range(0, tk.END)
-        self.edit_entry.focus()
-
-        self.edit_entry.bind("<Return>", self.finish_edit)
-        self.edit_entry.bind("<FocusOut>", self.finish_edit)
-        self.edit_entry.bind("<Escape>", self.cancel_edit)
-
-    def finish_edit(self, _event):
-        if not self.edit_entry:
-            return
-
-        new_val = self.edit_entry.get()
-        self.edit_entry.destroy()
-        self.edit_entry = None
-
-        try:
-            if self.editing_col in ("season", "topscore", "totalscore"):
-                val = int(new_val.replace(",", ""))
-            else:
-                val = new_val
-
-            self.captured_data[self.editing_row_idx][self.editing_col] = val
-            self.refresh_table()
-        except ValueError:
-            pass
-
-    def cancel_edit(self, _event):
-        if self.edit_entry:
-            self.edit_entry.destroy()
-            self.edit_entry = None
+        QMessageBox.information(self, "Saved", f"Data saved to {filename}")

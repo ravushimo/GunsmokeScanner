@@ -74,17 +74,23 @@ def class_tag(core_type: Optional[str]) -> str:
 
 
 def configure_class_tags(widget) -> None:
-    """Apply GFL2 class foreground colors as tags on a Treeview or Text widget."""
-    from tkinter import ttk
+    """Apply GFL2 class foreground colors on a QTableWidget / QTreeWidget / TextEdit.
 
-    for name, color in CLASS_COLORS.items():
-        tag = f"class_{name}"
-        if isinstance(widget, ttk.Treeview):
+    For Qt tables, stores colors on the widget as `class_colors` dict used by
+    callers when setting item foregrounds. For TextEdit-like widgets with
+    `setTextColor` / document tags, no-ops unless a `tag_configure` exists.
+    """
+    colors = {f"class_{name}": color for name, color in CLASS_COLORS.items()}
+    try:
+        widget.setProperty("class_colors", colors)
+    except Exception:
+        pass
+    if hasattr(widget, "tag_configure"):
+        for tag, color in colors.items():
             widget.tag_configure(tag, foreground=color)
-        elif hasattr(widget, "tag_config"):
+    elif hasattr(widget, "tag_config"):
+        for tag, color in colors.items():
             widget.tag_config(tag, foreground=color)
-        else:
-            widget.tag_configure(tag, foreground=color)
 
 
 SITE_URL = "https://gunsmoke.app/frontpage"
@@ -97,11 +103,38 @@ DEFAULT_UI = {
         "gunsmoke": "capture",
         "gacha": "capture",
         "inventory": "capture",
+        "settings": "main",
     },
+    "always_on_top": True,
 }
 
+# EasyOCR language codes. English is always included; Asian extras are optional.
+OCR_LANG_EN = "en"
+OCR_LANG_PRESETS = (
+    ("CN", "ch_sim", "Chinese (Simplified)"),
+    ("KR", "ko", "Korean"),
+    ("JP", "ja", "Japanese"),
+)
+# Extra codes for the custom picker (excluding en + preset codes).
+OCR_LANG_CUSTOM_CHOICES = (
+    ("ch_tra", "Chinese (Traditional)"),
+    ("fr", "French"),
+    ("de", "German"),
+    ("es", "Spanish"),
+    ("pt", "Portuguese"),
+    ("it", "Italian"),
+    ("ru", "Russian"),
+    ("uk", "Ukrainian"),
+    ("pl", "Polish"),
+    ("tr", "Turkish"),
+    ("vi", "Vietnamese"),
+    ("th", "Thai"),
+    ("ar", "Arabic"),
+    ("hi", "Hindi"),
+)
+
 DEFAULT_CONFIG = {
-    "ocr_languages": ["ch_sim", "en"],
+    "ocr_languages": [OCR_LANG_EN],
     "preprocessing": {
         "threshold": 140,
         "adaptive": True,
@@ -139,4 +172,4 @@ INVENTORY_GROWTH_REGIONS = (
     "own_count",
 )
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"

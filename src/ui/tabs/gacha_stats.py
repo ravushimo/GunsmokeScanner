@@ -1,12 +1,24 @@
-"""Gacha Stats — campaigns, 50/50, heatmap, banner filter."""
+"""Gacha Stats - campaigns, 50/50, heatmap, banner filter (PySide6)."""
 
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import ttk
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import customtkinter as ctk
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor, QPainter
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLayout,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.constants import THEME
 from src.core.gacha_stats import (
@@ -17,7 +29,13 @@ from src.core.gacha_stats import (
 )
 from src.data.gacha_db import GachaDB
 from src.ui.components.charts import ActivityHeatmap, ChartFrame
-from src.ui.styles import create_button
+from src.ui.styles import (
+    card_frame,
+    configure_stretch_table,
+    create_button,
+    section_frame,
+    toolbar_frame,
+)
 
 BANNER_FILTER_ORDER = (
     ("All", None),
@@ -28,7 +46,7 @@ BANNER_FILTER_ORDER = (
     ("Standard", "Standard Procurement"),
 )
 
-# Banner identity — GFL2 class colors (+ physical for Standard)
+# Banner identity - GFL2 class colors (+ physical for Standard)
 _BANNER_ACCENT = {
     "Premium Doll": THEME["class_vanguard"],
     "Premium Weapon": THEME["class_sentinel"],
@@ -42,7 +60,7 @@ _BANNER_ACCENT = {
     "Standard Procurement": THEME["element_physical"],
 }
 
-# 50/50 outcomes — Support / Omni / Electric (DESIGN class + type)
+# 50/50 outcomes - Support / Omni / Electric (DESIGN class + type)
 _OUTCOME_STYLE = {
     "win": ("W", "#E8F0EA", THEME["class_support"]),
     "loss": ("L", "#F5E8E6", THEME["element_omni"]),
@@ -57,6 +75,19 @@ _PITY_ORDER = (
     ("Standard", "pity_standard", "Standard Procurement"),
 )
 
+# (key, header label, width, alignment)
+_TABLE_COLUMNS = (
+    ("name", "Name", 140, Qt.AlignmentFlag.AlignLeft),
+    ("copies", "Copies", 60, Qt.AlignmentFlag.AlignCenter),
+    ("potential", "Rank", 50, Qt.AlignmentFlag.AlignCenter),
+    ("pulls", "Pulls", 60, Qt.AlignmentFlag.AlignCenter),
+    ("first_pity", "1st pity", 70, Qt.AlignmentFlag.AlignCenter),
+    ("losses", "L", 40, Qt.AlignmentFlag.AlignCenter),
+    ("wins", "W", 40, Qt.AlignmentFlag.AlignCenter),
+    ("guaranteed", "Guar.", 50, Qt.AlignmentFlag.AlignCenter),
+    ("status", "Status", 90, Qt.AlignmentFlag.AlignCenter),
+)
+
 
 def _hex_rgb(hex_color: str) -> Tuple[int, int, int]:
     h = hex_color.lstrip("#")
@@ -64,7 +95,7 @@ def _hex_rgb(hex_color: str) -> Tuple[int, int, int]:
 
 
 def _blend(hex_a: str, hex_b: str, t: float) -> str:
-    """Blend two #rrggbb colors; t=0 → a, t=1 → b."""
+    """Blend two #rrggbb colors; t=0 -> a, t=1 -> b."""
     ar, ag, ab = _hex_rgb(hex_a)
     br, bg, bb = _hex_rgb(hex_b)
     r = int(round(ar + (br - ar) * t))
@@ -78,537 +109,406 @@ def _soft_surface(accent: str, amount: float = 0.22) -> str:
     return _blend(THEME["bg_raised"], accent, amount)
 
 
-def _clear(frame: ctk.CTkFrame) -> None:
-    for child in frame.winfo_children():
-        child.destroy()
+def _clear_layout(layout: QLayout) -> None:
+    while layout.count():
+        item = layout.takeAt(0)
+        widget = item.widget()
+        if widget is not None:
+            widget.deleteLater()
+            continue
+        child_layout = item.layout()
+        if child_layout is not None:
+            _clear_layout(child_layout)
 
 
-class GachaStatsTab(ctk.CTkFrame):
+class _MetricChip(QWidget):
+    """Plain centered metric label; value text/color updates in place."""
+
+    def __init__(self, fonts, label: str, accent: Optional[str] = None):
+        super().__init__()
+        self._accent = accent
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 0, 12, 0)
+        lay.setSpacing(0)
+
+        title = QLabel(label.upper())
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFont(fonts.body)
+        title.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+        lay.addWidget(title)
+
+        self._value = QLabel("0")
+        self._value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._value.setFont(fonts.heading)
+        lay.addWidget(self._value)
+        self.set_value("0")
+
+    def set_value(self, text: str, accent: Optional[str] = None) -> None:
+        color = accent or self._accent or THEME["text_strong"]
+        self._value.setText(text)
+        self._value.setStyleSheet(f"color: {color}; background: transparent;")
+
+
+class _RatioBar(QWidget):
+    """Thin horizontal fill bar used inside pity cards."""
+
+    def __init__(self, ratio: float, color: str):
+        super().__init__()
+        self._ratio = max(0.0, min(1.0, ratio))
+        self._color = color
+        self.setFixedHeight(5)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(THEME["bg_canvas"]))
+        if self._ratio > 0:
+            w = max(4, int(self.width() * max(0.04, self._ratio)))
+            painter.fillRect(0, 0, w, self.height(), QColor(self._color))
+        painter.end()
+
+
+def _pity_card(fonts, title: str, current: int, hard: int, accent: str) -> QFrame:
+    ratio = min(1.0, current / hard) if hard else 0.0
+    # Banner accent -> Electric -> Burn as pity climbs
+    if ratio < 0.55:
+        bar = accent
+    elif ratio < 0.85:
+        bar = _blend(accent, THEME["element_electric"], (ratio - 0.55) / 0.30)
+    else:
+        bar = _blend(THEME["element_electric"], THEME["element_burn"], (ratio - 0.85) / 0.15)
+
+    border = _blend(THEME["border"], accent, 0.55)
+    card = card_frame(accent=border)
+    lay = QVBoxLayout(card)
+    lay.setContentsMargins(6, 5, 6, 5)
+    lay.setSpacing(2)
+
+    title_lbl = QLabel(title)
+    title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    title_lbl.setFont(fonts.body_medium)
+    title_lbl.setStyleSheet(f"color: {accent}; background: transparent;")
+    lay.addWidget(title_lbl)
+
+    val_lbl = QLabel(f"{current} / {hard}")
+    val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    val_lbl.setFont(fonts.subheading)
+    val_lbl.setStyleSheet(f"color: {THEME['text_strong']}; background: transparent;")
+    lay.addWidget(val_lbl)
+
+    lay.addWidget(_RatioBar(ratio, bar))
+    return card
+
+
+def _make_chip(fonts, outcome: str) -> QLabel:
+    glyph, fg, bg = _OUTCOME_STYLE.get(outcome, ("?", THEME["text_muted"], THEME["bg_raised"]))
+    chip = QLabel(glyph)
+    chip.setFixedSize(20, 20)
+    chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    chip.setFont(fonts.ui)
+    chip.setStyleSheet(f"color: {fg}; background-color: {bg}; border: none;")
+    return chip
+
+
+class _SequenceRow(QWidget):
+    """Single row of newest-first chips; truncates to fit available width."""
+
+    def __init__(self, fonts, outcomes: Sequence[str]):
+        super().__init__()
+        self._fonts = fonts
+        self._outcomes = list(outcomes)
+        self._built_w = -1
+        self.setFixedHeight(24)
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(8, 0, 8, 2)
+        self._layout.setSpacing(1)
+        self._render(force=True)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._render()
+
+    def _render(self, force: bool = False) -> None:
+        w = self.width()
+        if not force and w == self._built_w:
+            return
+        self._built_w = w
+        _clear_layout(self._layout)
+        if w < 20:
+            return
+
+        if not self._outcomes:
+            self._layout.addStretch(1)
+            empty = QLabel("-")
+            empty.setFont(self._fonts.body)
+            empty.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+            self._layout.addWidget(empty)
+            self._layout.addStretch(1)
+            return
+
+        # Chips are ~20px wide + spacing; keep a safety margin so the newest
+        # chip is never clipped.
+        chip_span = 22
+        ellipsis_w = 18
+        avail = max(20, w - 16)
+        shown = list(self._outcomes)
+        truncated = False
+        while shown:
+            need = len(shown) * chip_span
+            will_trunc = len(shown) < len(self._outcomes)
+            if will_trunc:
+                need += ellipsis_w
+            if need <= avail:
+                truncated = will_trunc
+                break
+            shown.pop(0)
+        if not shown:
+            shown = [self._outcomes[-1]]
+            truncated = len(self._outcomes) > 1
+
+        # Right-align so the newest chip is flush to the right (fully visible)
+        self._layout.addStretch(1)
+        if truncated:
+            dots = QLabel("...")
+            dots.setFont(self._fonts.body)
+            dots.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+            self._layout.addWidget(dots)
+        for o in shown:
+            self._layout.addWidget(_make_chip(self._fonts, o))
+
+
+def _fifty_card(fonts, title: str, stats: Dict[str, Any], *, guarantee: bool) -> QFrame:
+    accent = _BANNER_ACCENT.get(title, THEME["border"])
+    border = THEME["element_electric"] if guarantee else _blend(THEME["border"], accent, 0.55)
+
+    card = card_frame(accent=border)
+    lay = QVBoxLayout(card)
+    lay.setContentsMargins(8, 6, 8, 6)
+    lay.setSpacing(2)
+
+    head = QHBoxLayout()
+    title_lbl = QLabel(title)
+    title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    title_lbl.setFont(fonts.body_medium)
+    title_lbl.setStyleSheet(f"color: {accent}; background: transparent;")
+    head.addWidget(title_lbl, 1)
+    if guarantee:
+        badge = QLabel("NEXT GUARANTEED")
+        badge.setFont(fonts.body)
+        badge.setFixedHeight(18)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setStyleSheet(
+            f"color: #1a1a1a; background-color: {THEME['element_electric']}; padding: 0 4px; border: none;"
+        )
+        head.addWidget(badge)
+    lay.addLayout(head)
+
+    nums = QHBoxLayout()
+    nums.setSpacing(2)
+    for key, label, color in (
+        ("wins", "WIN", THEME["class_support"]),
+        ("losses", "LOSS", THEME["element_omni"]),
+        ("guaranteed", "GUAR", THEME["element_electric"]),
+    ):
+        cell = QFrame()
+        cell.setStyleSheet(f"background-color: {_soft_surface(color, 0.28)}; border: none;")
+        cell_lay = QVBoxLayout(cell)
+        cell_lay.setContentsMargins(2, 4, 2, 4)
+        cell_lay.setSpacing(0)
+        val = QLabel(str(stats.get(key, 0)))
+        val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        val.setFont(fonts.heading)
+        val.setStyleSheet(f"color: {color}; background: transparent; border: none;")
+        cell_lay.addWidget(val)
+        cap = QLabel(label)
+        cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cap.setFont(fonts.body)
+        cap.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent; border: none;")
+        cell_lay.addWidget(cap)
+        nums.addWidget(cell, 1)
+    lay.addLayout(nums)
+
+    wr = stats.get("win_rate")
+    wr_txt = f"{wr}% win rate" if wr is not None else "No decided 50/50 yet"
+    wr_lbl = QLabel(wr_txt)
+    wr_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    wr_lbl.setFont(fonts.body)
+    wr_lbl.setStyleSheet(f"color: {THEME['text_primary']}; background: transparent;")
+    lay.addWidget(wr_lbl)
+
+    streaks_txt = (
+        f"Longest W{stats.get('longest_win_streak', 0)} L{stats.get('longest_loss_streak', 0)}"
+        f"  -  Now W{stats.get('current_win_streak', 0)} L{stats.get('current_loss_streak', 0)}"
+    )
+    streaks_lbl = QLabel(streaks_txt)
+    streaks_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    streaks_lbl.setFont(fonts.body)
+    streaks_lbl.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+    lay.addWidget(streaks_lbl)
+
+    seq_lbl = QLabel("Sequence (newest shown)")
+    seq_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    seq_lbl.setFont(fonts.body)
+    seq_lbl.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+    lay.addWidget(seq_lbl)
+
+    outcomes: Sequence[str] = list(stats.get("sequence") or [])
+    lay.addWidget(_SequenceRow(fonts, outcomes))
+    return card
+
+
+class GachaStatsTab(QWidget):
     def __init__(self, parent, fonts, db: GachaDB = None):
-        super().__init__(parent, fg_color=THEME["bg_canvas"], corner_radius=0)
+        super().__init__(parent)
         self.fonts = fonts
         self.db = db or GachaDB()
-        self._banner_var = tk.StringVar(value="All")
-        self.setup_ui()
+        self.setStyleSheet(f"background-color: {THEME['bg_canvas']};")
+        self._build_ui()
         self.refresh()
 
-    def setup_ui(self):
-        toolbar = ctk.CTkFrame(
-            self,
-            fg_color=THEME["bg_surface"],
-            corner_radius=0,
-            border_width=1,
-            border_color=THEME["border"],
-        )
-        toolbar.pack(fill=tk.X, padx=8, pady=(6, 4))
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(8, 6, 8, 4)
+        root.setSpacing(4)
 
-        row = ctk.CTkFrame(toolbar, fg_color="transparent")
-        row.pack(fill=tk.X, padx=8, pady=6)
+        toolbar = toolbar_frame()
+        root.addWidget(toolbar)
+        row = QHBoxLayout(toolbar)
+        row.setContentsMargins(8, 6, 8, 6)
+        row.setSpacing(6)
 
-        ctk.CTkLabel(
-            row,
-            text="Banner:",
-            font=self.fonts.ui,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-        ).pack(side=tk.LEFT)
+        banner_lbl = QLabel("Banner:")
+        banner_lbl.setFont(self.fonts.ui)
+        banner_lbl.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+        row.addWidget(banner_lbl)
 
-        self.banner_menu = ctk.CTkOptionMenu(
-            row,
-            variable=self._banner_var,
-            values=[label for label, _ in BANNER_FILTER_ORDER],
-            width=160,
-            font=self.fonts.body,
-            command=lambda _v: self.refresh(),
-        )
-        self.banner_menu.pack(side=tk.LEFT, padx=(6, 16))
+        self.banner_combo = QComboBox()
+        self.banner_combo.addItems([label for label, _ in BANNER_FILTER_ORDER])
+        self.banner_combo.setFont(self.fonts.body)
+        self.banner_combo.setFixedWidth(160)
+        self.banner_combo.currentTextChanged.connect(lambda _t: self.refresh())
+        row.addWidget(self.banner_combo)
+        row.addSpacing(10)
 
-        ctk.CTkLabel(
-            row,
-            text="Filter applies to the whole Stats page.",
-            font=self.fonts.body,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            anchor="w",
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        desc = QLabel("Filter applies to the whole Stats page.")
+        desc.setFont(self.fonts.body)
+        desc.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+        row.addWidget(desc, 1)
 
-        create_button(
-            row,
-            text="Refresh",
-            variant="secondary",
-            font=self.fonts.ui,
-            command=self.refresh,
-            width=90,
-            height=28,
-        ).pack(side=tk.RIGHT, padx=(10, 0))
+        refresh_btn = create_button(toolbar, "Refresh", self.refresh, variant="secondary", font=self.fonts.ui)
+        refresh_btn.setFixedSize(90, 28)
+        row.addWidget(refresh_btn)
 
-        self.scroll = ctk.CTkScrollableFrame(
-            self,
-            fg_color=THEME["bg_canvas"],
-            corner_radius=0,
-            border_width=0,
-        )
-        self.scroll.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        root.addWidget(self.scroll, 1)
+
+        content = QWidget()
+        content.setStyleSheet(f"background-color: {THEME['bg_canvas']};")
+        self.scroll.setWidget(content)
+        content_lay = QVBoxLayout(content)
+        content_lay.setContentsMargins(2, 4, 2, 4)
+        content_lay.setSpacing(4)
 
         # --- Overview metrics (no cards) ---
-        self.summary_row = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        self.summary_row.pack(fill=tk.X, padx=2, pady=(4, 6))
+        summary_widget = QWidget()
+        self.summary_row = QHBoxLayout(summary_widget)
+        self.summary_row.setContentsMargins(0, 4, 0, 6)
+        self.summary_row.setSpacing(0)
+        # Freeze / Vanguard / Burn - cool total, doll class, weapon heat
+        self.chip_total = _MetricChip(self.fonts, "Total pulls", THEME["element_freeze"])
+        self.chip_dolls = _MetricChip(self.fonts, "Elite dolls", THEME["class_vanguard"])
+        self.chip_weapons = _MetricChip(self.fonts, "Elite weapons", THEME["element_burn"])
+        for chip in (self.chip_total, self.chip_dolls, self.chip_weapons):
+            self.summary_row.addWidget(chip, 1)
+        content_lay.addWidget(summary_widget)
 
-        # --- Current pity (section block with centered header) ---
-        self.pity_block = ctk.CTkFrame(
-            self.scroll,
-            fg_color=THEME["bg_surface"],
-            corner_radius=0,
-            border_width=1,
-            border_color=THEME["border"],
-        )
-        self.pity_block.pack(fill=tk.X, padx=2, pady=(4, 4))
-        ctk.CTkLabel(
-            self.pity_block,
-            text="Current pity",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X, padx=12, pady=(10, 4))
-        self.pity_row = ctk.CTkFrame(self.pity_block, fg_color="transparent")
-        self.pity_row.pack(fill=tk.X, padx=8, pady=(0, 8))
+        # --- Current pity (flat section + title) ---
+        pity_section = section_frame()
+        content_lay.addWidget(pity_section)
+        pity_outer = QVBoxLayout(pity_section)
+        pity_outer.setContentsMargins(0, 4, 0, 4)
+        pity_outer.setSpacing(6)
+        pity_title = QLabel("Current pity")
+        pity_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pity_title.setFont(self.fonts.subheading)
+        pity_title.setStyleSheet(f"color: {THEME['text_strong']}; background: transparent;")
+        pity_outer.addWidget(pity_title)
+        self.pity_row = QHBoxLayout()
+        self.pity_row.setSpacing(6)
+        pity_outer.addLayout(self.pity_row)
 
-        # --- 50/50 (section block with centered header) ---
-        self.fifty_block = ctk.CTkFrame(
-            self.scroll,
-            fg_color=THEME["bg_surface"],
-            corner_radius=0,
-            border_width=1,
-            border_color=THEME["border"],
-        )
-        self.fifty_block.pack(fill=tk.X, padx=2, pady=(4, 4))
-        ctk.CTkLabel(
-            self.fifty_block,
-            text="50/50 · Premium banners",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X, padx=12, pady=(10, 4))
-        self.fifty_row = ctk.CTkFrame(self.fifty_block, fg_color="transparent")
-        self.fifty_row.pack(fill=tk.X, padx=8, pady=(0, 8))
+        # --- 50/50 (flat section + title) ---
+        fifty_section = section_frame()
+        content_lay.addWidget(fifty_section)
+        fifty_outer = QVBoxLayout(fifty_section)
+        fifty_outer.setContentsMargins(0, 4, 0, 4)
+        fifty_outer.setSpacing(6)
+        fifty_title = QLabel("50/50 - Premium banners")
+        fifty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fifty_title.setFont(self.fonts.subheading)
+        fifty_title.setStyleSheet(f"color: {THEME['text_strong']}; background: transparent;")
+        fifty_outer.addWidget(fifty_title)
+        self.fifty_row = QHBoxLayout()
+        self.fifty_row.setSpacing(6)
+        fifty_outer.addLayout(self.fifty_row)
 
-        self.heatmap = ActivityHeatmap(self.scroll, fonts=self.fonts, height=186)
-        self.heatmap.pack(fill=tk.X, padx=2, pady=(0, 4))
+        self.heatmap = ActivityHeatmap(content, fonts=self.fonts, height=186)
+        content_lay.addWidget(self.heatmap)
 
-        charts_row = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        charts_row.pack(fill=tk.X, padx=0, pady=0)
-        charts_row.grid_columnconfigure(0, weight=1)
-        charts_row.grid_columnconfigure(1, weight=1)
+        charts_row = QHBoxLayout()
+        charts_row.setSpacing(4)
+        self.chart_banner = ChartFrame(content, "Pulls by banner", kind="pie", height=180, fonts=self.fonts)
+        self.chart_rarity = ChartFrame(content, "Pulls by rarity", kind="pie", height=180, fonts=self.fonts)
+        charts_row.addWidget(self.chart_banner, 1)
+        charts_row.addWidget(self.chart_rarity, 1)
+        content_lay.addLayout(charts_row)
 
-        self.chart_banner = ChartFrame(
-            charts_row, "Pulls by banner", kind="pie", height=180, fonts=self.fonts
-        )
-        self.chart_banner.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
-
-        self.chart_rarity = ChartFrame(
-            charts_row, "Pulls by rarity", kind="pie", height=180, fonts=self.fonts
-        )
-        self.chart_rarity.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
-
-        charts_row2 = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        charts_row2.pack(fill=tk.X, padx=0, pady=0)
-        charts_row2.grid_columnconfigure(0, weight=1)
-        charts_row2.grid_columnconfigure(1, weight=1)
-
+        charts_row2 = QHBoxLayout()
+        charts_row2.setSpacing(4)
         self.chart_dolls = ChartFrame(
-            charts_row2,
-            "Pulls spent per premium doll",
-            kind="campaign",
-            height=240,
-            fonts=self.fonts,
+            content, "Pulls spent per premium doll", kind="campaign", height=240, fonts=self.fonts
         )
-        self.chart_dolls.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
-
         self.chart_weapons = ChartFrame(
-            charts_row2,
-            "Pulls spent per premium weapon",
-            kind="campaign",
-            height=240,
-            fonts=self.fonts,
+            content, "Pulls spent per premium weapon", kind="campaign", height=240, fonts=self.fonts
         )
-        self.chart_weapons.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
+        charts_row2.addWidget(self.chart_dolls, 1)
+        charts_row2.addWidget(self.chart_weapons, 1)
+        content_lay.addLayout(charts_row2)
 
-        ctk.CTkLabel(
-            self.scroll,
-            text="Premium campaigns",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-            anchor="w",
-        ).pack(fill=tk.X, padx=2, pady=(6, 2))
+        campaigns_lbl = QLabel("Premium campaigns")
+        campaigns_lbl.setFont(self.fonts.subheading)
+        campaigns_lbl.setStyleSheet(f"color: {THEME['text_strong']}; background: transparent;")
+        content_lay.addWidget(campaigns_lbl)
 
-        table_wrap = ctk.CTkFrame(
-            self.scroll,
-            fg_color=THEME["bg_surface"],
-            corner_radius=0,
-            border_width=1,
-            border_color=THEME["border"],
+        self.table = QTableWidget(0, len(_TABLE_COLUMNS))
+        self.table.setHorizontalHeaderLabels([c[1] for c in _TABLE_COLUMNS])
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setAlternatingRowColors(False)
+        self.table.setMinimumHeight(280)
+        configure_stretch_table(
+            self.table,
+            stretch=0,
+            min_widths=[c[2] for c in _TABLE_COLUMNS],
         )
-        table_wrap.pack(fill=tk.BOTH, expand=True, padx=2, pady=(0, 6))
+        content_lay.addWidget(self.table)
 
-        cols = (
-            "name",
-            "type",
-            "banner",
-            "copies",
-            "potential",
-            "pulls",
-            "first_pity",
-            "losses",
-            "wins",
-            "guaranteed",
-            "status",
-        )
-        self.tree = ttk.Treeview(
-            table_wrap,
-            columns=cols,
-            show="headings",
-            style="Custom.Treeview",
-            height=12,
-        )
-        headings = {
-            "name": ("Name", 110),
-            "type": ("Type", 70),
-            "banner": ("Banner", 130),
-            "copies": ("Copies", 60),
-            "potential": ("Rank", 50),
-            "pulls": ("Pulls", 60),
-            "first_pity": ("1st pity", 70),
-            "losses": ("L", 40),
-            "wins": ("W", 40),
-            "guaranteed": ("Guar.", 50),
-            "status": ("Status", 90),
-        }
-        for key, (label, width) in headings.items():
-            self.tree.heading(key, text=label)
-            self.tree.column(
-                key, width=width, anchor=tk.CENTER if key != "name" else tk.W
-            )
-
-        scroll_y = ctk.CTkScrollbar(table_wrap, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll_y.set)
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6, 0), pady=6)
-        scroll_y.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 6), pady=6)
-
-        self.tree.tag_configure("complete", foreground=THEME["class_support"])
-        self.tree.tag_configure("progress", foreground=THEME["element_electric"])
-
-    def _selected_source(self):
-        label = self._banner_var.get()
+    def _selected_source(self) -> Optional[str]:
+        label = self.banner_combo.currentText()
         for name, source in BANNER_FILTER_ORDER:
             if name == label:
                 return source
         return None
 
-    def _metric_chip(self, parent, label: str, value: str, *, accent: Optional[str] = None):
-        """Plain centered metric — no card chrome; shares row width evenly."""
-        # height=1: CTkFrame defaults to 200px — that was the empty band above/below
-        chip = ctk.CTkFrame(parent, fg_color="transparent", height=1)
-        chip.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=12, pady=0)
-        ctk.CTkLabel(
-            chip,
-            text=label.upper(),
-            font=self.fonts.body,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X)
-        ctk.CTkLabel(
-            chip,
-            text=value,
-            font=self.fonts.heading,
-            text_color=accent or THEME["text_strong"],
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X)
-        return chip
+    def _render_summary(self, summary: Dict[str, Any]) -> None:
+        self.chip_total.set_value(str(summary.get("total", 0)))
+        self.chip_dolls.set_value(str(summary.get("elite_dolls", 0)))
+        self.chip_weapons.set_value(str(summary.get("elite_weapons", 0)))
 
-    def _pity_card(
-        self,
-        parent,
-        title: str,
-        current: int,
-        hard: int,
-        *,
-        accent: str,
-        column: int,
-        columns: int,
-    ):
-        ratio = min(1.0, current / hard) if hard else 0.0
-        # Banner accent → Electric → Burn as pity climbs
-        if ratio < 0.55:
-            bar = accent
-        elif ratio < 0.85:
-            bar = _blend(accent, THEME["element_electric"], (ratio - 0.55) / 0.30)
-        else:
-            bar = _blend(THEME["element_electric"], THEME["element_burn"], (ratio - 0.85) / 0.15)
-
-        parent.grid_columnconfigure(column, weight=1, uniform="pity")
-        card = ctk.CTkFrame(
-            parent,
-            fg_color=THEME["bg_raised"],
-            corner_radius=0,
-            border_width=1,
-            border_color=_blend(THEME["border"], accent, 0.55),
-        )
-        card.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 3, 0 if column == columns - 1 else 3), pady=0)
-
-        ctk.CTkLabel(
-            card,
-            text=title,
-            font=self.fonts.body_medium,
-            text_color=accent,
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X, padx=6, pady=(5, 0))
-
-        ctk.CTkLabel(
-            card,
-            text=f"{current} / {hard}",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X, padx=6, pady=(0, 3))
-
-        track = ctk.CTkFrame(card, fg_color=THEME["bg_canvas"], height=5, corner_radius=0)
-        track.pack(fill=tk.X, padx=8, pady=(0, 5))
-        track.pack_propagate(False)
-        if ratio > 0:
-            fill = ctk.CTkFrame(track, fg_color=bar, height=5, corner_radius=0)
-            fill.place(relx=0, rely=0, relwidth=max(0.04, ratio), relheight=1)
-
-    def _seq_chip(self, parent, outcome: str):
-        glyph, fg, bg = _OUTCOME_STYLE.get(
-            outcome, ("?", THEME["text_muted"], THEME["bg_raised"])
-        )
-        chip = ctk.CTkLabel(
-            parent,
-            text=glyph,
-            width=20,
-            height=20,
-            corner_radius=0,
-            fg_color=bg,
-            text_color=fg,
-            font=self.fonts.ui,
-        )
-        chip.pack(side=tk.LEFT, padx=1, pady=0)
-        return chip
-
-    def _pack_sequence(self, parent: ctk.CTkFrame, outcomes: Sequence[str]) -> None:
-        """Single row of newest chips, right-aligned so the latest is never clipped."""
-        host = ctk.CTkFrame(parent, fg_color="transparent", height=24)
-        host.pack(fill=tk.X, padx=8, pady=(0, 6))
-        host.pack_propagate(False)
-
-        all_outcomes = list(outcomes)
-        # CTk chips are wider than nominal width=20 — keep a safety margin
-        chip_span = 28
-        ellipsis_w = 16
-
-        def relayout(_event=None):
-            if getattr(host, "_busy", False):
-                return
-            w = max(host.winfo_width(), 1)
-            if w < 40:
-                return
-            prev = getattr(host, "_laid_w", 0)
-            if abs(w - prev) < 2 and host.winfo_children():
-                return
-            host._busy = True
-            try:
-                host._laid_w = w
-                for child in host.winfo_children():
-                    child.destroy()
-
-                if not all_outcomes:
-                    ctk.CTkLabel(
-                        host,
-                        text="—",
-                        font=self.fonts.body,
-                        text_color=THEME["text_muted"],
-                        fg_color="transparent",
-                    ).place(relx=0.5, rely=0.5, anchor="center")
-                    return
-
-                # Drop oldest until newest row + optional "…" fits with margin
-                avail = max(20, w - 6)
-                shown = list(all_outcomes)
-                truncated = False
-                while shown:
-                    need = len(shown) * chip_span
-                    will_trunc = len(shown) < len(all_outcomes)
-                    if will_trunc:
-                        need += ellipsis_w
-                    if need <= avail:
-                        truncated = will_trunc
-                        break
-                    shown.pop(0)
-                if not shown:
-                    shown = [all_outcomes[-1]]
-                    truncated = len(all_outcomes) > 1
-
-                # Right-align so the newest chip is flush to the right (fully visible)
-                row = ctk.CTkFrame(host, fg_color="transparent")
-                row.place(relx=1.0, rely=0.5, anchor="e")
-                if truncated:
-                    ctk.CTkLabel(
-                        row,
-                        text="…",
-                        font=self.fonts.body,
-                        text_color=THEME["text_muted"],
-                        fg_color="transparent",
-                        width=14,
-                    ).pack(side=tk.LEFT)
-                for o in shown:
-                    self._seq_chip(row, o)
-            finally:
-                host._busy = False
-
-        host.bind("<Configure>", relayout)
-        host.after_idle(relayout)
-
-    def _fifty_card(
-        self,
-        parent,
-        title: str,
-        stats: Dict[str, Any],
-        *,
-        guarantee: bool,
-        column: int,
-        columns: int,
-    ):
-        accent = _BANNER_ACCENT.get(title, THEME["border"])
-        parent.grid_columnconfigure(column, weight=1, uniform="fifty")
-        card = ctk.CTkFrame(
-            parent,
-            fg_color=THEME["bg_raised"],
-            corner_radius=0,
-            border_width=1,
-            border_color=THEME["element_electric"] if guarantee else _blend(THEME["border"], accent, 0.55),
-        )
-        card.grid(
-            row=0,
-            column=column,
-            sticky="nsew",
-            padx=(0 if column == 0 else 3, 0 if column == columns - 1 else 3),
-            pady=0,
-        )
-
-        head = ctk.CTkFrame(card, fg_color="transparent")
-        head.pack(fill=tk.X, padx=8, pady=(6, 2))
-        ctk.CTkLabel(
-            head,
-            text=title,
-            font=self.fonts.body_medium,
-            text_color=accent,
-            fg_color="transparent",
-            anchor="center",
-        ).pack(side=tk.LEFT, expand=True)
-        if guarantee:
-            ctk.CTkLabel(
-                head,
-                text="NEXT GUARANTEED",
-                font=self.fonts.body,
-                text_color="#1a1a1a",
-                fg_color=THEME["element_electric"],
-                corner_radius=0,
-                height=18,
-            ).pack(side=tk.RIGHT)
-
-        nums = ctk.CTkFrame(card, fg_color="transparent")
-        nums.pack(fill=tk.X, padx=6, pady=(0, 2))
-        for key, label, color in (
-            ("wins", "WIN", THEME["class_support"]),
-            ("losses", "LOSS", THEME["element_omni"]),
-            ("guaranteed", "GUAR", THEME["element_electric"]),
-        ):
-            cell = ctk.CTkFrame(nums, fg_color=_soft_surface(color, 0.28), corner_radius=0)
-            cell.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2)
-            ctk.CTkLabel(
-                cell,
-                text=str(stats.get(key, 0)),
-                font=self.fonts.heading,
-                text_color=color,
-                fg_color="transparent",
-                anchor="center",
-            ).pack(fill=tk.X, pady=(4, 0))
-            ctk.CTkLabel(
-                cell,
-                text=label,
-                font=self.fonts.body,
-                text_color=THEME["text_muted"],
-                fg_color="transparent",
-                anchor="center",
-            ).pack(fill=tk.X, pady=(0, 4))
-
-        wr = stats.get("win_rate")
-        wr_txt = f"{wr}% win rate" if wr is not None else "No decided 50/50 yet"
-        ctk.CTkLabel(
-            card,
-            text=wr_txt,
-            font=self.fonts.body,
-            text_color=THEME["text_primary"],
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X, padx=8, pady=(0, 1))
-
-        streaks = (
-            f"Longest W{stats.get('longest_win_streak', 0)} L{stats.get('longest_loss_streak', 0)}"
-            f"  ·  Now W{stats.get('current_win_streak', 0)} L{stats.get('current_loss_streak', 0)}"
-        )
-        ctk.CTkLabel(
-            card,
-            text=streaks,
-            font=self.fonts.body,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X, padx=8, pady=(0, 2))
-
-        ctk.CTkLabel(
-            card,
-            text="Sequence (newest shown)",
-            font=self.fonts.body,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            anchor="center",
-        ).pack(fill=tk.X, padx=8, pady=(0, 1))
-
-        outcomes: Sequence[str] = list(stats.get("sequence") or [])
-        self._pack_sequence(card, outcomes)
-
-    def _render_summary(self, summary: Dict[str, Any]):
-        _clear(self.summary_row)
-        # Freeze / Vanguard / Burn — cool total, doll class, weapon heat
-        self._metric_chip(
-            self.summary_row,
-            "Total pulls",
-            str(summary.get("total", 0)),
-            accent=THEME["element_freeze"],
-        )
-        self._metric_chip(
-            self.summary_row,
-            "Elite dolls",
-            str(summary.get("elite_dolls", 0)),
-            accent=THEME["class_vanguard"],
-        )
-        self._metric_chip(
-            self.summary_row,
-            "Elite weapons",
-            str(summary.get("elite_weapons", 0)),
-            accent=THEME["element_burn"],
-        )
-
-    def _render_pity(self, summary: Dict[str, Any], src: Optional[str]):
-        _clear(self.pity_row)
+    def _render_pity(self, summary: Dict[str, Any], src: Optional[str]) -> None:
+        _clear_layout(self.pity_row)
         hard = summary.get("hard_pity", ELITE_HARD_PITY)
         by = summary.get("pity_by_source") or {}
         items: List[Tuple[str, int, str]] = []
@@ -623,25 +523,19 @@ class GachaStatsTab(ctk.CTkFrame):
                     cur = by.get(source, 0)
                 accent = _BANNER_ACCENT.get(title, THEME["element_physical"])
                 items.append((title, int(cur or 0), accent))
-        n = len(items)
-        for i, (title, cur, accent) in enumerate(items):
-            self._pity_card(
-                self.pity_row, title, cur, hard, accent=accent, column=i, columns=n
-            )
+        for title, cur, accent in items:
+            self.pity_row.addWidget(_pity_card(self.fonts, title, cur, hard, accent), 1)
 
-    def _render_fifty(self, fifty: Dict[str, Any], src: Optional[str]):
-        _clear(self.fifty_row)
+    def _render_fifty(self, fifty: Dict[str, Any], src: Optional[str]) -> None:
+        _clear_layout(self.fifty_row)
         by_banner = fifty.get("by_banner") or {}
 
         if src == "Standard Procurement":
-            ctk.CTkLabel(
-                self.fifty_row,
-                text="Standard banner — pity only. No 50/50 win/loss tracking.",
-                font=self.fonts.body,
-                text_color=THEME["text_muted"],
-                fg_color="transparent",
-                anchor="center",
-            ).pack(fill=tk.X, padx=10, pady=8)
+            msg = QLabel("Standard banner - pity only. No 50/50 win/loss tracking.")
+            msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            msg.setFont(self.fonts.body)
+            msg.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+            self.fifty_row.addWidget(msg, 1)
             return
 
         cards: List[Tuple[str, Dict[str, Any], bool]] = []
@@ -658,28 +552,45 @@ class GachaStatsTab(ctk.CTkFrame):
             cards.append((label, stats, g))
 
         if not cards:
-            ctk.CTkLabel(
-                self.fifty_row,
-                text="No 50/50 outcomes in this filter.",
-                font=self.fonts.body,
-                text_color=THEME["text_muted"],
-                fg_color="transparent",
-                anchor="center",
-            ).pack(fill=tk.X, padx=10, pady=8)
+            msg = QLabel("No 50/50 outcomes in this filter.")
+            msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            msg.setFont(self.fonts.body)
+            msg.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+            self.fifty_row.addWidget(msg, 1)
             return
 
-        n = len(cards)
-        for i, (label, stats, g) in enumerate(cards):
-            self._fifty_card(
-                self.fifty_row, label, stats, guarantee=g, column=i, columns=n
-            )
+        for label, stats, g in cards:
+            self.fifty_row.addWidget(_fifty_card(self.fonts, label, stats, guarantee=g), 1)
 
-    def refresh(self):
+    def _render_table(self, campaigns: List[Dict[str, Any]]) -> None:
+        self.table.setRowCount(len(campaigns))
+        for row, c in enumerate(campaigns):
+            status = "V6 done" if c.get("complete") else "In progress"
+            if c.get("extras"):
+                status += f" +{c['extras']}"
+            color = THEME["class_support"] if c.get("complete") else THEME["element_electric"]
+            values = (
+                c.get("name", ""),
+                c.get("copies", 0),
+                c.get("potential", ""),
+                c.get("pulls_spent", 0),
+                c.get("first_pity", ""),
+                c.get("fifty_losses", 0),
+                c.get("fifty_wins", 0),
+                c.get("fifty_guaranteed", 0),
+                status,
+            )
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                align = _TABLE_COLUMNS[col][3]
+                item.setTextAlignment(int(align | Qt.AlignmentFlag.AlignVCenter))
+                item.setForeground(QBrush(QColor(color)))
+                self.table.setItem(row, col, item)
+
+    def refresh(self) -> None:
         self.db.normalize_purchase_sources()
         timeline = self.db.list_all_oldest_first()
-        report = build_stats_report(
-            timeline, purchase_source=self._selected_source()
-        )
+        report = build_stats_report(timeline, purchase_source=self._selected_source())
         summary = report["summary"]
         fifty = report["fifty_fifty"]
         charts = report["charts"]
@@ -696,29 +607,4 @@ class GachaStatsTab(ctk.CTkFrame):
         self.chart_dolls.set_data(charts.get("doll_campaigns"), luck_max=luck)
         self.chart_weapons.set_data(charts.get("weapon_campaigns"), luck_max=luck)
 
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        for c in report.get("campaigns") or []:
-            status = "V6 done" if c.get("complete") else "In progress"
-            if c.get("extras"):
-                status += f" +{c['extras']}"
-            tag = "complete" if c.get("complete") else "progress"
-            self.tree.insert(
-                "",
-                tk.END,
-                values=(
-                    c.get("name", ""),
-                    c.get("item_type", ""),
-                    c.get("banner", ""),
-                    c.get("copies", 0),
-                    c.get("potential", ""),
-                    c.get("pulls_spent", 0),
-                    c.get("first_pity", ""),
-                    c.get("fifty_losses", 0),
-                    c.get("fifty_wins", 0),
-                    c.get("fifty_guaranteed", 0),
-                    status,
-                ),
-                tags=(tag,),
-            )
+        self._render_table(report.get("campaigns") or [])

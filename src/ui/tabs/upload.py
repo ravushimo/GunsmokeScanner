@@ -1,53 +1,64 @@
+"""Gunsmoke.app upload tab (PySide6)."""
+
 import glob
 import os
-import tkinter as tk
-from tkinter import ttk
 
-import customtkinter as ctk
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.constants import THEME
 from src.core.security import decrypt_password, encrypt_password
 from src.data.uploader import GunsmokeClient
-from src.ui.styles import create_button
+from src.ui.styles import create_button, section_frame
 
 
-class UploadTab(ctk.CTkFrame):
+def _make_label(text: str, font, color: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setFont(font)
+    lbl.setStyleSheet(f"color: {color}; background: transparent;")
+    return lbl
+
+
+class UploadTab(QWidget):
     def __init__(self, parent, config_manager, fonts):
-        super().__init__(parent, fg_color=THEME["bg_canvas"], corner_radius=0)
+        super().__init__(parent)
+        self.setStyleSheet(f"background-color: {THEME['bg_canvas']};")
         self.config_manager = config_manager
         self.fonts = fonts
         self.client = GunsmokeClient()
         self.setup_ui()
 
     def setup_ui(self):
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
 
-        ctk.CTkLabel(
-            main_frame,
-            text="Upload to Gunsmoke.app",
-            font=self.fonts.heading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(pady=(0, 20))
-
-        # Authentication card
-        auth_frame = ctk.CTkFrame(
-            main_frame,
-            fg_color=THEME["bg_surface"],
-            corner_radius=6,
-            border_width=1,
-            border_color=THEME["border"],
+        title = _make_label(
+            "Upload to Gunsmoke.app", self.fonts.heading, THEME["text_strong"]
         )
-        auth_frame.pack(fill=tk.X, pady=(0, 15))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(title)
 
-        ctk.CTkLabel(
-            auth_frame,
-            text="Authentication & Upload",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(anchor=tk.W, padx=15, pady=(15, 10))
+        # Authentication section
+        auth_frame = section_frame()
+        auth_layout = QVBoxLayout(auth_frame)
+        auth_layout.setContentsMargins(0, 0, 0, 0)
+        auth_layout.setSpacing(8)
+
+        auth_layout.addWidget(
+            _make_label(
+                "Authentication & Upload", self.fonts.subheading, THEME["text_strong"]
+            )
+        )
 
         upload_config = self.config_manager.get("gunsmoke_app", {})
         saved_url = upload_config.get("api_url", "https://gunsmoke.app")
@@ -57,178 +68,128 @@ class UploadTab(ctk.CTkFrame):
             else "Gunsmoke.app (Production)"
         )
 
-        # Environment selector (ttk.Combobox styled via Custom.TCombobox)
-        env_frame = ctk.CTkFrame(auth_frame, fg_color="transparent")
-        env_frame.pack(fill=tk.X, padx=15, pady=5)
-
-        ctk.CTkLabel(
-            env_frame,
-            text="Environment:",
-            font=self.fonts.body,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            width=120,
-            anchor=tk.W,
-        ).pack(side=tk.LEFT)
-
-        self.api_env_var = tk.StringVar(value=default_env)
-        env_dropdown = ttk.Combobox(
-            env_frame,
-            textvariable=self.api_env_var,
-            values=["Gunsmoke.app (Production)", "Localhost (Development)"],
-            state="readonly",
-            width=30,
-            style="Custom.TCombobox",
+        # Environment selector
+        env_row = QHBoxLayout()
+        env_label = _make_label("Environment:", self.fonts.body, THEME["text_muted"])
+        env_label.setFixedWidth(120)
+        env_row.addWidget(env_label)
+        self.api_env_combo = QComboBox()
+        self.api_env_combo.addItems(
+            ["Gunsmoke.app (Production)", "Localhost (Development)"]
         )
-        env_dropdown.pack(side=tk.LEFT, padx=(0, 10))
+        self.api_env_combo.setCurrentText(default_env)
+        env_row.addWidget(self.api_env_combo, 1)
+        auth_layout.addLayout(env_row)
 
         # Username
-        user_frame = ctk.CTkFrame(auth_frame, fg_color="transparent")
-        user_frame.pack(fill=tk.X, padx=15, pady=5)
-
-        ctk.CTkLabel(
-            user_frame,
-            text="Username:",
-            font=self.fonts.body,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            width=120,
-            anchor=tk.W,
-        ).pack(side=tk.LEFT)
-
-        self.username_entry = ctk.CTkEntry(user_frame, font=self.fonts.mono)
-        self.username_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
+        user_row = QHBoxLayout()
+        user_label = _make_label("Username:", self.fonts.body, THEME["text_muted"])
+        user_label.setFixedWidth(120)
+        user_row.addWidget(user_label)
+        self.username_entry = QLineEdit()
+        self.username_entry.setFont(self.fonts.mono)
         if upload_config.get("username"):
-            self.username_entry.insert(0, upload_config.get("username"))
+            self.username_entry.setText(upload_config.get("username"))
+        user_row.addWidget(self.username_entry, 1)
+        auth_layout.addLayout(user_row)
 
         # Password
-        pass_frame = ctk.CTkFrame(auth_frame, fg_color="transparent")
-        pass_frame.pack(fill=tk.X, padx=15, pady=5)
-
-        ctk.CTkLabel(
-            pass_frame,
-            text="Password:",
-            font=self.fonts.body,
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            width=120,
-            anchor=tk.W,
-        ).pack(side=tk.LEFT)
-
-        self.password_entry = ctk.CTkEntry(pass_frame, font=self.fonts.mono, show="*")
-        self.password_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
+        pass_row = QHBoxLayout()
+        pass_label = _make_label("Password:", self.fonts.body, THEME["text_muted"])
+        pass_label.setFixedWidth(120)
+        pass_row.addWidget(pass_label)
+        self.password_entry = QLineEdit()
+        self.password_entry.setFont(self.fonts.mono)
+        self.password_entry.setEchoMode(QLineEdit.EchoMode.Password)
         if upload_config.get("password_encrypted"):
             decrypted = decrypt_password(upload_config.get("password_encrypted"))
             if decrypted:
-                self.password_entry.insert(0, decrypted)
+                self.password_entry.setText(decrypted)
+        pass_row.addWidget(self.password_entry, 1)
+        auth_layout.addLayout(pass_row)
 
         # Checkboxes
-        checkbox_frame = ctk.CTkFrame(auth_frame, fg_color="transparent")
-        checkbox_frame.pack(fill=tk.X, padx=15, pady=5)
-
-        self.save_creds_var = tk.BooleanVar(
-            value=upload_config.get("save_credentials", False)
-        )
-        ctk.CTkCheckBox(
-            checkbox_frame,
-            text="Save credentials (encrypted)",
-            variable=self.save_creds_var,
-            font=self.fonts.body,
-            text_color=THEME["text_primary"],
-        ).pack(side=tk.LEFT, padx=(120, 20))
-
-        self.remove_missing_var = tk.BooleanVar(value=False)
-        ctk.CTkCheckBox(
-            checkbox_frame,
-            text="Mark commanders not in CSV as left",
-            variable=self.remove_missing_var,
-            font=self.fonts.body,
-            text_color=THEME["text_primary"],
-        ).pack(side=tk.LEFT)
+        checkbox_row = QHBoxLayout()
+        checkbox_row.addSpacing(120)
+        self.save_creds_check = QCheckBox("Save credentials (encrypted)")
+        self.save_creds_check.setFont(self.fonts.body)
+        self.save_creds_check.setChecked(upload_config.get("save_credentials", False))
+        checkbox_row.addWidget(self.save_creds_check)
+        checkbox_row.addSpacing(20)
+        self.remove_missing_check = QCheckBox("Mark commanders not in CSV as left")
+        self.remove_missing_check.setFont(self.fonts.body)
+        checkbox_row.addWidget(self.remove_missing_check)
+        checkbox_row.addStretch(1)
+        auth_layout.addLayout(checkbox_row)
 
         # Guild info display
-        self.guild_info_label = ctk.CTkLabel(
-            auth_frame,
-            text="",
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            font=self.fonts.body,
-        )
-        self.guild_info_label.pack(pady=(5, 5))
+        self.guild_info_label = _make_label("", self.fonts.body, THEME["text_muted"])
+        self.guild_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        auth_layout.addWidget(self.guild_info_label)
 
         # Buttons
-        buttons_frame = ctk.CTkFrame(auth_frame, fg_color="transparent")
-        buttons_frame.pack(fill=tk.X, padx=15, pady=(5, 10))
-
-        create_button(
-            buttons_frame,
-            "Verify Login & Permissions",
-            self.verify_credentials,
-            variant="secondary",
-            font=self.fonts.ui,
-        ).pack(side=tk.LEFT)
-
-        create_button(
-            buttons_frame,
-            "Upload Last CSV",
-            self.upload_last_csv,
-            variant="primary",
-            font=self.fonts.ui,
-        ).pack(side=tk.RIGHT)
-
-        ctk.CTkLabel(
-            auth_frame,
-            text="Make sure latest results are saved to CSV in the Capture Data tab.",
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            font=self.fonts.caption,
-        ).pack(pady=(0, 15))
-
-        # Status panel
-        status_frame = ctk.CTkFrame(
-            main_frame,
-            fg_color=THEME["bg_surface"],
-            corner_radius=6,
-            border_width=1,
-            border_color=THEME["border"],
+        buttons_row = QHBoxLayout()
+        buttons_row.addWidget(
+            create_button(
+                None,
+                "Verify Login & Permissions",
+                self.verify_credentials,
+                variant="secondary",
+                font=self.fonts.ui,
+            )
         )
-        status_frame.pack(fill=tk.BOTH, expand=True)
-
-        ctk.CTkLabel(
-            status_frame,
-            text="Upload Status",
-            font=self.fonts.subheading,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-        ).pack(anchor=tk.W, padx=15, pady=(15, 10))
-
-        self.upload_status_text = ctk.CTkTextbox(
-            status_frame,
-            height=300,
-            wrap=tk.WORD,
-            font=self.fonts.mono,
-            fg_color=THEME["bg_canvas"],
-            text_color=THEME["text_primary"],
-            border_width=1,
-            border_color=THEME["border"],
+        buttons_row.addStretch(1)
+        buttons_row.addWidget(
+            create_button(
+                None,
+                "Upload Last CSV",
+                self.upload_last_csv,
+                variant="primary",
+                font=self.fonts.ui,
+            )
         )
-        self.upload_status_text.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+        auth_layout.addLayout(buttons_row)
+
+        note = _make_label(
+            "Make sure latest results are saved to CSV in the Capture Data tab.",
+            self.fonts.caption,
+            THEME["text_muted"],
+        )
+        note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        auth_layout.addWidget(note)
+
+        main_layout.addWidget(auth_frame)
+
+        # Status section
+        status_frame = section_frame()
+        status_layout = QVBoxLayout(status_frame)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(8)
+
+        status_layout.addWidget(
+            _make_label("Upload Status", self.fonts.subheading, THEME["text_strong"])
+        )
+
+        self.upload_status_text = QPlainTextEdit()
+        self.upload_status_text.setReadOnly(True)
+        self.upload_status_text.setFont(self.fonts.mono)
+        self.upload_status_text.setMinimumHeight(300)
+        status_layout.addWidget(self.upload_status_text)
+
+        main_layout.addWidget(status_frame, 1)
 
         self.log("Ready. Configure authentication and upload your CSV.")
 
     def log(self, msg):
-        self.upload_status_text.insert(tk.END, msg + "\n")
-        self.upload_status_text.see(tk.END)
+        self.upload_status_text.appendPlainText(msg)
 
     def _update_client_env(self):
-        is_prod = "Production" in self.api_env_var.get()
+        is_prod = "Production" in self.api_env_combo.currentText()
         self.client.set_environment(is_prod)
 
     def verify_credentials(self):
-        username = self.username_entry.get().strip()
-        password = self.password_entry.get()
+        username = self.username_entry.text().strip()
+        password = self.password_entry.text()
 
         if not username or not password:
             self.log("[ERROR] Please enter username and password")
@@ -245,19 +206,21 @@ class UploadTab(ctk.CTkFrame):
             self.log(f"[SUCCESS] Authenticated as {username}")
             self.log(f"[INFO] Guild: {guild_name}, Role: {role}")
 
-            self.guild_info_label.configure(
-                text=f"Authenticated | Guild: {guild_name} | Role: {role.capitalize()}",
-                text_color=THEME["success"],
+            self.guild_info_label.setText(
+                f"Authenticated | Guild: {guild_name} | Role: {role.capitalize()}"
+            )
+            self.guild_info_label.setStyleSheet(
+                f"color: {THEME['success']}; background: transparent;"
             )
 
-            if self.save_creds_var.get():
+            if self.save_creds_check.isChecked():
                 self.save_upload_config()
                 self.log("[INFO] Credentials saved (encrypted)")
         else:
             self.log(f"[ERROR] Authentication failed: {msg}")
-            self.guild_info_label.configure(
-                text="Authentication failed",
-                text_color=THEME["danger"],
+            self.guild_info_label.setText("Authentication failed")
+            self.guild_info_label.setStyleSheet(
+                f"color: {THEME['danger']}; background: transparent;"
             )
 
     def upload_last_csv(self):
@@ -269,9 +232,9 @@ class UploadTab(ctk.CTkFrame):
 
         latest_csv = max(csv_files, key=os.path.getmtime)
 
-        username = self.username_entry.get().strip()
-        password = self.password_entry.get()
-        remove_missing = self.remove_missing_var.get()
+        username = self.username_entry.text().strip()
+        password = self.password_entry.text()
+        remove_missing = self.remove_missing_check.isChecked()
 
         if not username or not password:
             self.log("[ERROR] Please enter username and password")
@@ -303,15 +266,15 @@ class UploadTab(ctk.CTkFrame):
                 if len(errors) > 5:
                     self.log(f"  ... and {len(errors) - 5} more")
 
-            if self.save_creds_var.get():
+            if self.save_creds_check.isChecked():
                 self.save_upload_config()
         else:
             self.log(f"[ERROR] Upload failed: {msg}")
 
     def save_upload_config(self):
-        username = self.username_entry.get().strip()
-        password = self.password_entry.get()
-        save_creds = self.save_creds_var.get()
+        username = self.username_entry.text().strip()
+        password = self.password_entry.text()
+        save_creds = self.save_creds_check.isChecked()
 
         gunsmoke_app_config = self.config_manager.get("gunsmoke_app", {})
         if not isinstance(gunsmoke_app_config, dict):

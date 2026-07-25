@@ -1,4 +1,4 @@
-"""Create/refresh persistent CPU and CUDA build venvs for compile.bat.
+"""Create/refresh persistent CPU and CUDA build venvs for setup.bat (option 3).
 
 Keeps torch wheels separate so release builds do not uninstall/reinstall
 between CPU and CUDA PyInstaller runs.

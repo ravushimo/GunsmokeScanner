@@ -1,15 +1,17 @@
-"""Lightweight Canvas charts (no matplotlib dependency)."""
+"""Lightweight Qt charts (no matplotlib dependency)."""
 
 from __future__ import annotations
 
-import tkinter as tk
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-import customtkinter as ctk
+from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
+from PySide6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from src.constants import THEME
 
-# GFL2 type + class colors (DESIGN.md) — distinct on dark canvas
+# GFL2 type + class colors (DESIGN.md) - distinct on dark canvas
 _PALETTE = (
     THEME["element_burn"],
     THEME["element_corrosion"],
@@ -24,10 +26,15 @@ _PALETTE = (
     THEME["element_physical"],
 )
 
-# Support (lucky) → Electric → Omni (worst-case V6)
+# Support (lucky) -> Electric -> Omni (worst-case V6)
 _LUCK_GREEN = (75, 126, 91)       # class_support
 _LUCK_YELLOW = (255, 215, 0)      # element_electric
 _LUCK_RED = (224, 49, 49)         # element_omni
+
+_SURFACE_STYLE = (
+    f"QFrame#ChartSurface {{ background-color: {THEME['bg_surface']}; "
+    f"border: 1px solid {THEME['border']}; }}"
+)
 
 
 def _lerp(a: float, b: float, t: float) -> float:
@@ -40,7 +47,7 @@ def _rgb_to_hex(rgb: Tuple[float, float, float]) -> str:
 
 
 def luck_color(ratio: float) -> str:
-    """Map 0..1 (pulls / worst V6) to green → yellow → red."""
+    """Map 0..1 (pulls / worst V6) to green -> yellow -> red."""
     t = max(0.0, min(1.0, float(ratio)))
     if t <= 0.5:
         u = t / 0.5
@@ -61,7 +68,87 @@ def _shade(hex_color: str, factor: float) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
-class ChartFrame(ctk.CTkFrame):
+def _chart_font(size: int, *, bold: bool = False, fonts=None) -> QFont:
+    family = fonts.family if fonts else "Segoe UI"
+    font = QFont(family, size)
+    font.setWeight(QFont.Weight.Bold if bold else QFont.Weight.Normal)
+    return font
+
+
+def _title_font(fonts=None) -> QFont:
+    if fonts:
+        return fonts.subheading
+    font = QFont("Segoe UI", 16)
+    font.setWeight(QFont.Weight.Bold)
+    return font
+
+
+def _draw_text(
+    painter: QPainter,
+    x: float,
+    y: float,
+    text: str,
+    *,
+    anchor: str = "w",
+    color: str = THEME["text_primary"],
+    font: Optional[QFont] = None,
+) -> None:
+    painter.setPen(QColor(color))
+    if font is not None:
+        painter.setFont(font)
+    metrics = QFontMetrics(painter.font())
+    tw = metrics.horizontalAdvance(text)
+    th = metrics.height()
+    if anchor == "e":
+        tx, ty = x - tw, y - th / 2
+    elif anchor == "center":
+        tx, ty = x - tw / 2, y - th / 2
+    elif anchor == "s":
+        tx, ty = x - tw / 2, y - th
+    elif anchor == "n":
+        tx, ty = x - tw / 2, y
+    else:
+        tx, ty = x, y - th / 2
+    painter.drawText(int(tx), int(ty + metrics.ascent()), text)
+
+
+def _heat_color(count: int, peak: int) -> str:
+    if count <= 0 or peak <= 0:
+        return THEME["bg_raised"]
+    t = min(1.0, count / peak)
+    # Neutral intensity ramp - easy day-to-day contrast on dark UI
+    cold = (55, 58, 52)
+    mid = (247, 165, 1)     # amber
+    hot = (245, 78, 0)      # CTA orange
+    if t < 0.5:
+        u = t / 0.5
+        rgb = tuple(_lerp(cold[i], mid[i], u) for i in range(3))
+    else:
+        u = (t - 0.5) / 0.5
+        rgb = tuple(_lerp(mid[i], hot[i], u) for i in range(3))
+    return _rgb_to_hex(rgb)
+
+
+class _ChartCanvas(QWidget):
+    """Drawing surface for ChartFrame."""
+
+    def __init__(self, chart: "ChartFrame", height: int):
+        super().__init__(chart)
+        self._chart = chart
+        self.setMinimumHeight(height)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor(THEME["bg_canvas"]))
+        w = max(self.width(), 40)
+        h = max(self.height(), 40)
+        self._chart._paint(painter, w, h)
+        painter.end()
+
+
+class ChartFrame(QFrame):
     """Pie, bar, or stacked campaign-luck bar chart."""
 
     def __init__(
@@ -73,40 +160,35 @@ class ChartFrame(ctk.CTkFrame):
         height: int = 220,
         fonts=None,
     ):
-        super().__init__(
-            parent,
-            fg_color=THEME["bg_surface"],
-            corner_radius=0,
-            border_width=1,
-            border_color=THEME["border"],
-        )
+        super().__init__(parent)
+        self.setObjectName("ChartSurface")
+        self.setStyleSheet(_SURFACE_STYLE)
+
         self.kind = kind
         self._fonts = fonts
         self._data: Any = {}
         # Color scale only (worst-case V6); bar width uses dataset max
         self._luck_max: float = 1120.0
 
-        title_font = fonts.subheading if fonts else ("Segoe UI", 16, "bold")
-        # Keep title band short — CTkLabel default height adds a lot of top air
-        ctk.CTkLabel(
-            self,
-            text=title,
-            font=title_font,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-            anchor="center",
-            height=22,
-        ).pack(fill=tk.X, padx=8, pady=(8, 2))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 3)
+        layout.setSpacing(2)
 
-        self.canvas = tk.Canvas(
-            self,
-            height=height,
-            bg=THEME["bg_canvas"],
-            highlightthickness=0,
-            bd=0,
-        )
-        self.canvas.pack(fill=tk.BOTH, expand=True, padx=3, pady=(1, 3))
-        self.canvas.bind("<Configure>", lambda _e: self._redraw())
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setFont(_title_font(fonts))
+        title_label.setStyleSheet(f"color: {THEME['text_strong']}; background: transparent;")
+        title_label.setFixedHeight(22)
+        layout.addWidget(title_label)
+
+        canvas_wrap = QWidget()
+        canvas_wrap.setStyleSheet("background: transparent;")
+        canvas_layout = QVBoxLayout(canvas_wrap)
+        canvas_layout.setContentsMargins(3, 1, 3, 0)
+        canvas_layout.setSpacing(0)
+        self._canvas = _ChartCanvas(self, height)
+        canvas_layout.addWidget(self._canvas)
+        layout.addWidget(canvas_wrap, 1)
 
     def set_data(
         self,
@@ -120,88 +202,83 @@ class ChartFrame(ctk.CTkFrame):
             self._data = list(data or [])
         else:
             self._data = {k: float(v) for k, v in (data or {}).items() if v}
-        self._redraw()
+        self._canvas.update()
 
-    def _redraw(self) -> None:
-        c = self.canvas
-        c.delete("all")
-        w = max(c.winfo_width(), 40)
-        h = max(c.winfo_height(), 40)
-
+    def _paint(self, painter: QPainter, w: int, h: int) -> None:
         if self.kind == "campaign":
             rows = list(self._data or [])
             if not rows:
-                self._empty(w, h)
+                self._empty(painter, w, h)
                 return
-            self._draw_campaign_bars(rows, w, h)
+            self._draw_campaign_bars(painter, rows, w, h)
             return
 
         items = sorted(self._data.items(), key=lambda kv: -kv[1])
         if not items:
-            self._empty(w, h)
+            self._empty(painter, w, h)
             return
         if self.kind == "pie":
-            self._draw_pie(items, w, h)
+            self._draw_pie(painter, items, w, h)
         else:
-            self._draw_bar(items, w, h)
+            self._draw_bar(painter, items, w, h)
 
-    def _empty(self, w: int, h: int) -> None:
-        self.canvas.create_text(
-            w // 2,
-            h // 2,
-            text="No data",
-            fill=THEME["text_muted"],
-            font=("Segoe UI", 11),
+    def _empty(self, painter: QPainter, w: int, h: int) -> None:
+        _draw_text(
+            painter,
+            w / 2,
+            h / 2,
+            "No data",
+            anchor="center",
+            color=THEME["text_muted"],
+            font=_chart_font(11, fonts=self._fonts),
         )
 
-    def _draw_pie(self, items: Sequence[Tuple[str, float]], w: int, h: int) -> None:
-        c = self.canvas
+    def _draw_pie(
+        self,
+        painter: QPainter,
+        items: Sequence[Tuple[str, float]],
+        w: int,
+        h: int,
+    ) -> None:
         total = sum(v for _, v in items) or 1.0
         size = min(w * 0.42, h - 20)
         cx, cy = w * 0.28, h / 2
         x0, y0 = cx - size / 2, cy - size / 2
-        x1, y1 = cx + size / 2, cy + size / 2
+        pie_rect = QRectF(x0, y0, size, size)
         start = 90.0
         legend_x = w * 0.55
         legend_y = 12
+        body_font = _chart_font(9, fonts=self._fonts)
+        painter.setPen(QPen(QColor(THEME["bg_canvas"]), 2))
+
         for i, (label, value) in enumerate(items):
             extent = -360.0 * (value / total)
             color = _PALETTE[i % len(_PALETTE)]
             if abs(extent) < 0.5:
                 continue
-            c.create_arc(
-                x0,
-                y0,
-                x1,
-                y1,
-                start=start,
-                extent=extent,
-                fill=color,
-                outline=THEME["bg_canvas"],
-                width=2,
-            )
+            painter.setBrush(QColor(color))
+            painter.drawPie(pie_rect, int(start * 16), int(extent * 16))
             start += extent
             pct = 100.0 * value / total
-            c.create_rectangle(
-                legend_x,
-                legend_y,
-                legend_x + 10,
-                legend_y + 10,
-                fill=color,
-                outline="",
-            )
-            c.create_text(
+            painter.fillRect(QRectF(legend_x, legend_y, 10, 10), QColor(color))
+            _draw_text(
+                painter,
                 legend_x + 16,
                 legend_y + 5,
-                text=f"{label}  {int(value)} ({pct:.0f}%)",
+                f"{label}  {int(value)} ({pct:.0f}%)",
                 anchor="w",
-                fill=THEME["text_primary"],
-                font=("Segoe UI", 9),
+                color=THEME["text_primary"],
+                font=body_font,
             )
             legend_y += 18
 
-    def _draw_bar(self, items: Sequence[Tuple[str, float]], w: int, h: int) -> None:
-        c = self.canvas
+    def _draw_bar(
+        self,
+        painter: QPainter,
+        items: Sequence[Tuple[str, float]],
+        w: int,
+        h: int,
+    ) -> None:
         items = list(items)[:12]
         max_v = max(v for _, v in items) or 1.0
         pad_l, pad_r, pad_t = 6, 8, 4
@@ -210,41 +287,45 @@ class ChartFrame(ctk.CTkFrame):
         value_w = 40
         bar_x0 = pad_l + label_w + 6
         bar_x1 = w - pad_r - value_w
+        body_font = _chart_font(9, fonts=self._fonts)
 
         for i, (label, value) in enumerate(items):
             y = pad_t + i * row_h
             cy = y + row_h / 2
-            short = label if len(label) <= 16 else label[:14] + "…"
-            c.create_text(
+            short = label if len(label) <= 16 else label[:14] + "\u2026"
+            _draw_text(
+                painter,
                 pad_l + label_w,
                 cy,
-                text=short,
+                short,
                 anchor="e",
-                fill=THEME["text_muted"],
-                font=("Segoe UI", 9),
+                color=THEME["text_muted"],
+                font=body_font,
             )
             bw = max(bar_x1 - bar_x0, 4) * (value / max_v)
             color = _PALETTE[i % len(_PALETTE)]
-            c.create_rectangle(
-                bar_x0,
-                cy - 5,
-                bar_x0 + max(bw, 2),
-                cy + 5,
-                fill=color,
-                outline="",
+            painter.fillRect(
+                QRectF(bar_x0, cy - 5, max(bw, 2), 10),
+                QColor(color),
             )
-            c.create_text(
+            _draw_text(
+                painter,
                 w - pad_r,
                 cy,
-                text=str(int(value)),
+                str(int(value)),
                 anchor="e",
-                fill=THEME["text_strong"],
-                font=("Segoe UI", 9),
+                color=THEME["text_strong"],
+                font=body_font,
             )
 
-    def _draw_campaign_bars(self, rows: List[Dict[str, Any]], w: int, h: int) -> None:
+    def _draw_campaign_bars(
+        self,
+        painter: QPainter,
+        rows: List[Dict[str, Any]],
+        w: int,
+        h: int,
+    ) -> None:
         """Stacked per-copy segments; bar width vs dataset max; color vs luck max."""
-        c = self.canvas
         rows = rows[:12]
         bar_scale = max((float(r.get("total") or 0) for r in rows), default=1.0) or 1.0
         luck_scale = max(float(self._luck_max), 1.0)
@@ -258,6 +339,8 @@ class ChartFrame(ctk.CTkFrame):
         bar_x1 = w - pad_r - value_w
         full_w = max(bar_x1 - bar_x0, 4)
         bar_half = min(6, max(4, row_h * 0.30))
+        body_font = _chart_font(9, fonts=self._fonts)
+        seg_font = _chart_font(7, bold=True, fonts=self._fonts)
 
         for i, row in enumerate(rows):
             name = str(row.get("name") or "")
@@ -268,24 +351,21 @@ class ChartFrame(ctk.CTkFrame):
 
             y = pad_t + i * row_h
             cy = y + row_h / 2
-            short = name if len(name) <= 14 else name[:12] + "…"
-            c.create_text(
+            short = name if len(name) <= 14 else name[:12] + "\u2026"
+            _draw_text(
+                painter,
                 pad_l + label_w,
                 cy,
-                text=short,
+                short,
                 anchor="e",
-                fill=THEME["text_muted"],
-                font=("Segoe UI", 9),
+                color=THEME["text_muted"],
+                font=body_font,
             )
 
             # Track = relative scale (dataset max fills the track)
-            c.create_rectangle(
-                bar_x0,
-                cy - bar_half,
-                bar_x0 + full_w,
-                cy + bar_half,
-                fill=THEME["bg_raised"],
-                outline="",
+            painter.fillRect(
+                QRectF(bar_x0, cy - bar_half, full_w, bar_half * 2),
+                QColor(THEME["bg_raised"]),
             )
 
             luck_ratio = total / luck_scale
@@ -299,207 +379,170 @@ class ChartFrame(ctk.CTkFrame):
                     continue
                 shade_f = 1.08 if si % 2 == 0 else 0.82
                 color = _shade(base, shade_f)
-                c.create_rectangle(
-                    x,
-                    cy - bar_half,
-                    x + sw,
-                    cy + bar_half,
-                    fill=color,
-                    outline=THEME["bg_canvas"],
-                    width=1,
-                )
+                seg_rect = QRectF(x, cy - bar_half, sw, bar_half * 2)
+                painter.fillRect(seg_rect, QColor(color))
+                painter.setPen(QPen(QColor(THEME["bg_canvas"]), 1))
+                painter.drawRect(seg_rect)
+                painter.setPen(Qt.PenStyle.NoPen)
                 if sw >= 26:
-                    c.create_text(
+                    _draw_text(
+                        painter,
                         x + sw / 2,
                         cy,
-                        text=f"V{si}",
-                        fill="#1c1d1a",
-                        font=("Segoe UI", 7, "bold"),
+                        f"V{si}",
+                        anchor="center",
+                        color="#1c1d1a",
+                        font=seg_font,
                     )
                 x += sw
 
             pct_luck = 100.0 * min(1.0, luck_ratio)
-            c.create_text(
+            _draw_text(
+                painter,
                 w - pad_r,
                 cy,
-                text=f"{int(total)} ({pct_luck:.0f}%)",
+                f"{int(total)} ({pct_luck:.0f}%)",
                 anchor="e",
-                fill=base,
-                font=("Segoe UI", 9, "bold"),
+                color=base,
+                font=_chart_font(9, bold=True, fonts=self._fonts),
             )
 
 
-def _heat_color(count: int, peak: int) -> str:
-    if count <= 0 or peak <= 0:
-        return THEME["bg_raised"]
-    t = min(1.0, count / peak)
-    # Neutral intensity ramp — easy day-to-day contrast on dark UI
-    cold = (55, 58, 52)
-    mid = (247, 165, 1)     # amber
-    hot = (245, 78, 0)      # CTA orange
-    if t < 0.5:
-        u = t / 0.5
-        rgb = tuple(_lerp(cold[i], mid[i], u) for i in range(3))
-    else:
-        u = (t - 0.5) / 0.5
-        rgb = tuple(_lerp(mid[i], hot[i], u) for i in range(3))
-    return _rgb_to_hex(rgb)
+class _HeatmapCanvas(QWidget):
+    """Drawing surface for ActivityHeatmap with hover tooltips."""
 
-
-class ActivityHeatmap(ctk.CTkFrame):
-    """GitHub-style calendar heatmap — section block with centered header."""
-
-    def __init__(self, parent, fonts=None, height: int = 178):
-        super().__init__(
-            parent,
-            fg_color=THEME["bg_surface"],
-            corner_radius=0,
-            border_width=1,
-            border_color=THEME["border"],
-        )
-        self.fonts = fonts
-        self._redraw_after = None
-        title_font = fonts.subheading if fonts else ("Segoe UI", 12, "bold")
-        title = ctk.CTkLabel(
-            self,
-            text="Pull activity",
-            font=title_font,
-            text_color=THEME["text_strong"],
-            fg_color="transparent",
-            anchor="center",
-        )
-        title.pack(fill=tk.X, padx=12, pady=(10, 2))
-        self._meta = ctk.CTkLabel(
-            self,
-            text="",
-            font=fonts.body if fonts else ("Segoe UI", 11),
-            text_color=THEME["text_muted"],
-            fg_color="transparent",
-            anchor="center",
-        )
-        self._meta.pack(fill=tk.X, padx=12, pady=(0, 2))
-        self.canvas = tk.Canvas(
-            self,
-            height=height,
-            bg=THEME["bg_surface"],
-            highlightthickness=0,
-            borderwidth=0,
-        )
-        self.canvas.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
-        self.canvas.bind("<Configure>", self._on_configure)
-        self.canvas.bind("<Motion>", self._on_motion)
-        self.canvas.bind("<Leave>", self._on_leave)
-        self._counts: Dict[str, int] = {}
+    def __init__(self, heatmap: "ActivityHeatmap", height: int):
+        super().__init__(heatmap)
+        self._heatmap = heatmap
+        self.setMinimumHeight(height)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMouseTracking(True)
+        self._tip: Optional[Tuple[str, float, float, str]] = None
         self._last_size = (0, 0)
-        # (x0, y0, x1, y1, iso_date, count)
-        self._hit_cells: List[Tuple[float, float, float, float, str, int]] = []
-        self._tip_id = None
-        self._tip_bg_id = None
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(40)
+        self._resize_timer.timeout.connect(self.update)
 
-    def _on_configure(self, _event=None):
-        w = self.canvas.winfo_width()
-        h = self.canvas.winfo_height()
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        w = self.width()
+        h = self.height()
         if abs(w - self._last_size[0]) < 2 and abs(h - self._last_size[1]) < 2:
             return
-        if self._redraw_after is not None:
-            try:
-                self.after_cancel(self._redraw_after)
-            except Exception:
-                pass
-        self._redraw_after = self.after(40, self._redraw)
+        self._last_size = (w, h)
+        self._resize_timer.start()
 
-    def set_data(self, activity_by_day: Optional[Dict[str, int]]) -> None:
-        self._counts = dict(activity_by_day or {})
-        total = sum(self._counts.values())
-        days = len(self._counts)
-        peak = max(self._counts.values()) if self._counts else 0
-        self._meta.configure(
-            text=f"{total} pulls across {days} days  ·  peak {peak}/day"
-            if days
-            else "No dated pulls"
-        )
-        self._redraw()
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor(THEME["bg_surface"]))
+        w = max(self.width(), 200)
+        h = max(self.height(), 80)
+        self._heatmap._paint_grid(painter, w, h, self._tip)
+        painter.end()
 
-    def _clear_tip(self):
-        c = self.canvas
-        if self._tip_id is not None:
-            c.delete(self._tip_id)
-            self._tip_id = None
-        if self._tip_bg_id is not None:
-            c.delete(self._tip_bg_id)
-            self._tip_bg_id = None
-
-    def _on_leave(self, _event=None):
-        self._clear_tip()
-
-    def _on_motion(self, event):
-        x, y = event.x, event.y
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        x = event.position().x()
+        y = event.position().y()
         hit = None
-        for x0, y0, x1, y1, day, count in self._hit_cells:
+        for x0, y0, x1, y1, day, count in self._heatmap._hit_cells:
             if x0 <= x <= x1 and y0 <= y <= y1:
                 hit = (day, count, x0, y0, x1, y1)
                 break
-        self._clear_tip()
+
         if hit is None:
+            if self._tip is not None:
+                self._tip = None
+                self.update()
             return
+
         day, count, x0, y0, x1, y1 = hit
         label = f"{day}: {count} pull{'s' if count != 1 else ''}"
-        c = self.canvas
-        # Prefer above the cell; flip below if near top
         tx = (x0 + x1) / 2
         ty = y0 - 6
         anchor = "s"
         if ty < 14:
             ty = y1 + 6
             anchor = "n"
-        # Clamp horizontally inside canvas
-        cw = max(c.winfo_width(), 1)
+        cw = max(self.width(), 1)
         tx = max(40, min(cw - 40, tx))
-        self._tip_id = c.create_text(
-            tx,
-            ty,
-            text=label,
-            fill=THEME["text_strong"],
-            font=("Segoe UI", 8, "bold"),
-            anchor=anchor,
-            tags=("tip",),
-        )
-        bbox = c.bbox(self._tip_id)
-        if bbox:
-            pad = 3
-            self._tip_bg_id = c.create_rectangle(
-                bbox[0] - pad,
-                bbox[1] - pad,
-                bbox[2] + pad,
-                bbox[3] + pad,
-                fill=THEME["bg_raised"],
-                outline=THEME["border"],
-                width=1,
-                tags=("tip",),
-            )
-            c.tag_lower(self._tip_bg_id, self._tip_id)
+        new_tip = (label, tx, ty, anchor)
+        if new_tip != self._tip:
+            self._tip = new_tip
+            self.update()
 
-    def _redraw(self) -> None:
-        self._redraw_after = None
-        c = self.canvas
-        c.delete("all")
+    def leaveEvent(self, _event) -> None:  # noqa: N802
+        if self._tip is not None:
+            self._tip = None
+            self.update()
+
+
+class ActivityHeatmap(QFrame):
+    """GitHub-style calendar heatmap - section block with centered header."""
+
+    def __init__(self, parent, fonts=None, height: int = 178):
+        super().__init__(parent)
+        self.setObjectName("ChartSurface")
+        self.setStyleSheet(_SURFACE_STYLE)
+
+        self.fonts = fonts
+        self._counts: Dict[str, int] = {}
+        # (x0, y0, x1, y1, iso_date, count)
+        self._hit_cells: List[Tuple[float, float, float, float, str, int]] = []
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 8)
+        layout.setSpacing(2)
+
+        title = QLabel("Pull activity")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFont(fonts.subheading if fonts else _chart_font(12, bold=True))
+        title.setStyleSheet(f"color: {THEME['text_strong']}; background: transparent;")
+        layout.addWidget(title)
+
+        self._meta = QLabel("")
+        self._meta.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._meta.setFont(fonts.body if fonts else _chart_font(11))
+        self._meta.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
+        layout.addWidget(self._meta)
+
+        self._canvas = _HeatmapCanvas(self, height)
+        layout.addWidget(self._canvas, 1)
+
+    def set_data(self, activity_by_day: Optional[Dict[str, int]]) -> None:
+        self._counts = dict(activity_by_day or {})
+        total = sum(self._counts.values())
+        days = len(self._counts)
+        peak = max(self._counts.values()) if self._counts else 0
+        self._meta.setText(
+            f"{total} pulls across {days} days  \u00b7  peak {peak}/day"
+            if days
+            else "No dated pulls"
+        )
+        self._canvas._tip = None
+        self._canvas.update()
+
+    def _paint_grid(
+        self,
+        painter: QPainter,
+        w: int,
+        h: int,
+        tip: Optional[Tuple[str, float, float, str]],
+    ) -> None:
         self._hit_cells.clear()
-        self._tip_id = None
-        self._tip_bg_id = None
-        w = max(c.winfo_width(), 200)
-        h = max(c.winfo_height(), 80)
-        self._last_size = (w, h)
+
         if not self._counts:
-            c.create_text(
-                w // 2,
-                h // 2,
-                text="—",
-                fill=THEME["text_muted"],
-                font=("Segoe UI", 12),
+            _draw_text(
+                painter,
+                w / 2,
+                h / 2,
+                "-",
+                anchor="center",
+                color=THEME["text_muted"],
+                font=_chart_font(12, fonts=self.fonts),
             )
             return
-
-        from datetime import datetime, timedelta
 
         days_sorted = sorted(self._counts)
         try:
@@ -531,15 +574,17 @@ class ActivityHeatmap(ctk.CTkFrame):
         # Keep grid below the week-number band (don't vertically center into it)
         oy = pad_t + max(0, (avail_h - grid_h) // 2)
 
+        label_font = _chart_font(7, fonts=self.fonts)
         weekday_labels = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
         for i, lab in enumerate(weekday_labels):
-            c.create_text(
+            _draw_text(
+                painter,
                 ox - 4,
                 oy + i * (cell_h + gap) + cell_h / 2,
-                text=lab,
+                lab,
                 anchor="e",
-                fill=THEME["text_muted"],
-                font=("Segoe UI", 7),
+                color=THEME["text_muted"],
+                font=label_font,
             )
 
         # Week numbers in the reserved top band (ISO week)
@@ -549,13 +594,14 @@ class ActivityHeatmap(ctk.CTkFrame):
             cx = ox + week * (cell_w + gap) + cell_w / 2
             if cell_w < 12 and week % 2:
                 continue
-            c.create_text(
+            _draw_text(
+                painter,
                 cx,
-                week_band // 2,
-                text=str(iso_week),
-                fill=THEME["text_muted"],
-                font=("Segoe UI", 7),
+                week_band / 2,
+                str(iso_week),
                 anchor="center",
+                color=THEME["text_muted"],
+                font=label_font,
             )
 
         d = start
@@ -569,14 +615,43 @@ class ActivityHeatmap(ctk.CTkFrame):
             x1 = x0 + cell_w
             y1 = y0 + cell_h
             color = _heat_color(count, peak)
-            c.create_rectangle(
-                x0,
-                y0,
-                x1,
-                y1,
-                fill=color,
-                outline=THEME["bg_canvas"],
-                width=1,
-            )
+            cell_rect = QRectF(x0, y0, cell_w, cell_h)
+            painter.fillRect(cell_rect, QColor(color))
+            painter.setPen(QPen(QColor(THEME["bg_canvas"]), 1))
+            painter.drawRect(cell_rect)
+            painter.setPen(Qt.PenStyle.NoPen)
             self._hit_cells.append((x0, y0, x1, y1, key, count))
             d += timedelta(days=1)
+
+        if tip is not None:
+            label, tx, ty, anchor = tip
+            tip_font = _chart_font(8, bold=True, fonts=self.fonts)
+            painter.setFont(tip_font)
+            metrics = QFontMetrics(tip_font)
+            tw = metrics.horizontalAdvance(label)
+            th = metrics.height()
+            pad = 3
+            if anchor == "s":
+                text_x = tx - tw / 2
+                text_y = ty - th
+            else:
+                text_x = tx - tw / 2
+                text_y = ty
+            bg_rect = QRectF(
+                text_x - pad,
+                text_y - pad,
+                tw + pad * 2,
+                th + pad * 2,
+            )
+            painter.fillRect(bg_rect, QColor(THEME["bg_raised"]))
+            painter.setPen(QPen(QColor(THEME["border"]), 1))
+            painter.drawRect(bg_rect)
+            _draw_text(
+                painter,
+                tx,
+                text_y + th / 2,
+                label,
+                anchor="center",
+                color=THEME["text_strong"],
+                font=tip_font,
+            )

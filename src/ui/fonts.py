@@ -1,23 +1,16 @@
-"""IBM Plex Sans loading and typography scale for the CTk UI.
+"""IBM Plex Sans loading and typography scale for the Qt UI.
 
-DESIGN.md mandates IBM Plex Sans Variable. We bundle the four weights we
-actually use (Regular/Medium/SemiBold/Bold) and register them privately
-into the process via GDI on Windows so no install is required.
-
-If registration fails (locked-down account, non-Windows runtime), we fall
-back to Segoe UI which is the closest font in DESIGN.md's fallback list.
+DESIGN.md mandates IBM Plex Sans. We bundle Regular/Medium/SemiBold/Bold and
+register them via QFontDatabase. Falls back to Segoe UI if registration fails.
 """
 
-import ctypes
+from __future__ import annotations
+
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import customtkinter as ctk
-
-# AddFontResourceExW flags - private to the calling process, no broadcast.
-_FR_PRIVATE = 0x10
-_FR_NOT_ENUM = 0x20
+from PySide6.QtGui import QFont, QFontDatabase
 
 _FONT_FILES = (
     "IBMPlexSans-Regular.ttf",
@@ -26,71 +19,75 @@ _FONT_FILES = (
     "IBMPlexSans-Bold.ttf",
 )
 
+# TrueType / OpenType / TrueType collection magic numbers
+_FONT_MAGICS = (b"\x00\x01\x00\x00", b"OTTO", b"true", b"ttcf")
+
 
 @dataclass(frozen=True)
 class Fonts:
-    """Typography scale used across the app. Sizes are in points (Tk's unit).
+    """Typography scale used across the app."""
 
-    The pixel sizes from DESIGN.md were translated to the closest practical
-    point sizes for an 800x1000 desktop window.
-    """
-
-    heading: ctk.CTkFont  # Section title (DESIGN: 24px/700)
-    subheading: ctk.CTkFont  # Sub-heading (DESIGN: 16-20px/700)
-    body: ctk.CTkFont  # Body text (DESIGN: 14px/400)
-    body_medium: ctk.CTkFont  # Body medium (DESIGN: 14px/500)
-    ui: ctk.CTkFont  # Buttons / nav labels (DESIGN: 14px/600)
-    caption: ctk.CTkFont  # Status bar / micro labels (DESIGN: 12px/400)
-    mono: ctk.CTkFont  # Monospace (Consolas - per DESIGN fallback list)
+    heading: QFont
+    subheading: QFont
+    body: QFont
+    body_medium: QFont
+    ui: QFont
+    caption: QFont
+    mono: QFont
+    family: str
 
 
 def _assets_dir() -> Path:
-    """Locate `assets/` in dev and inside a PyInstaller onedir bundle."""
     if hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS) / "assets"
     return Path(__file__).resolve().parents[2] / "assets"
 
 
-def _register_plex_fonts() -> bool:
-    """Register bundled IBM Plex TTFs with the current process on Windows.
-
-    Returns True if every file registered, False otherwise.
-    """
-    if sys.platform != "win32":
+def _is_font_file(path: Path) -> bool:
+    """Reject non-font payloads (e.g. HTML saved as .ttf from a bad download)."""
+    try:
+        with path.open("rb") as fh:
+            magic = fh.read(4)
+    except OSError:
         return False
+    return magic in _FONT_MAGICS
 
+
+def _register_plex_fonts() -> str | None:
     fonts_dir = _assets_dir() / "fonts"
     if not fonts_dir.is_dir():
-        return False
+        return None
 
-    try:
-        gdi32 = ctypes.windll.gdi32
-    except (AttributeError, OSError):
-        return False
-
-    ok = True
+    family: str | None = None
     for name in _FONT_FILES:
         path = fonts_dir / name
-        if not path.is_file():
-            ok = False
+        if not path.is_file() or not _is_font_file(path):
             continue
-        # AddFontResourceExW returns >0 fonts added on success, 0 on failure.
-        added = gdi32.AddFontResourceExW(str(path), _FR_PRIVATE | _FR_NOT_ENUM, 0)
-        if not added:
-            ok = False
-    return ok
+        font_id = QFontDatabase.addApplicationFont(str(path))
+        if font_id < 0:
+            continue
+        families = QFontDatabase.applicationFontFamilies(font_id)
+        if families and family is None:
+            family = families[0]
+    return family
+
+
+def _mk(family: str, point_size: int, weight: QFont.Weight) -> QFont:
+    font = QFont(family, point_size)
+    font.setWeight(weight)
+    return font
 
 
 def load_fonts() -> Fonts:
     """Register IBM Plex Sans (best-effort) and build the typography scale."""
-    family = "IBM Plex Sans" if _register_plex_fonts() else "Segoe UI"
-
+    family = _register_plex_fonts() or "Segoe UI"
     return Fonts(
-        heading=ctk.CTkFont(family=family, size=18, weight="bold"),
-        subheading=ctk.CTkFont(family=family, size=12, weight="bold"),
-        body=ctk.CTkFont(family=family, size=10, weight="normal"),
-        body_medium=ctk.CTkFont(family=family, size=10, weight="bold"),
-        ui=ctk.CTkFont(family=family, size=10, weight="bold"),
-        caption=ctk.CTkFont(family=family, size=9, weight="normal"),
-        mono=ctk.CTkFont(family="Consolas", size=10, weight="normal"),
+        heading=_mk(family, 18, QFont.Weight.Bold),
+        subheading=_mk(family, 12, QFont.Weight.Bold),
+        body=_mk(family, 10, QFont.Weight.Normal),
+        body_medium=_mk(family, 10, QFont.Weight.DemiBold),
+        ui=_mk(family, 10, QFont.Weight.DemiBold),
+        caption=_mk(family, 9, QFont.Weight.Normal),
+        mono=_mk("Consolas", 10, QFont.Weight.Normal),
+        family=family,
     )

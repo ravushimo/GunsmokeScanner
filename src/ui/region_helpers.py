@@ -2,42 +2,54 @@
 
 from typing import Callable, Optional, Tuple
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import QLineEdit
+
 FIELD_INDEX = {"x": 0, "y": 1, "w": 2, "h": 3}
 
 
-def bind_entry_arrow_nudge(entry, field: str, on_nudge: Callable[[str, int], None]):
+def bind_entry_arrow_nudge(entry: QLineEdit, field: str, on_nudge: Callable[[str, int], None]):
     """Arrow keys adjust the focused X/Y/W/H entry (Shift = ±10).
 
     Position fields use screen directions (Up decreases Y). Size fields use
     Up/Right to grow and Down/Left to shrink.
     """
+    orig = entry.keyPressEvent
 
-    def handler(event, field_name=field):
-        step = 10 if (event.state & 0x0001) else 1
+    def keyPressEvent(event: QKeyEvent, field_name=field):
+        if event.key() not in (
+            Qt.Key.Key_Up,
+            Qt.Key.Key_Down,
+            Qt.Key.Key_Left,
+            Qt.Key.Key_Right,
+        ):
+            return orig(event)
+
+        step = 10 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
         delta = 0
-        key = event.keysym
+        key = event.key()
         if field_name == "x":
-            if key in ("Left", "Up"):
+            if key in (Qt.Key.Key_Left, Qt.Key.Key_Up):
                 delta = -step
-            elif key in ("Right", "Down"):
+            elif key in (Qt.Key.Key_Right, Qt.Key.Key_Down):
                 delta = step
         elif field_name == "y":
-            if key in ("Up", "Left"):
+            if key in (Qt.Key.Key_Up, Qt.Key.Key_Left):
                 delta = -step
-            elif key in ("Down", "Right"):
+            elif key in (Qt.Key.Key_Down, Qt.Key.Key_Right):
                 delta = step
-        else:  # w, h
-            if key in ("Up", "Right"):
+        else:
+            if key in (Qt.Key.Key_Up, Qt.Key.Key_Right):
                 delta = step
-            elif key in ("Down", "Left"):
+            elif key in (Qt.Key.Key_Down, Qt.Key.Key_Left):
                 delta = -step
         if delta == 0:
-            return
+            return orig(event)
         on_nudge(field_name, delta)
-        return "break"
+        event.accept()
 
-    for key in ("<Up>", "<Down>", "<Left>", "<Right>"):
-        entry.bind(key, handler)
+    entry.keyPressEvent = keyPressEvent  # type: ignore[method-assign]
 
 
 def fill_field_across_rows(rows, col_name: str, field: str, value: int) -> int:

@@ -1,12 +1,22 @@
 """Region-picker overlay windows drawn on top of the GFL2 game.
 
-Implementation note: we deliberately keep the raw `tk.Toplevel` mechanism
-here rather than using `CTkToplevel`. CTk's wrapper does not play well with
-`overrideredirect(True)` + `-alpha` + `-topmost`, and the overlays need to
-be borderless, semi-transparent, and click-draggable above any other window.
+Each region is a frameless, semi-transparent PySide6 QWidget that stays
+above other windows and supports click-drag plus edge resize.
 """
 
-import tkinter as tk
+from __future__ import annotations
+
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QCursor, QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QSpinBox,
+    QTextEdit,
+    QWidget,
+)
 
 from src.constants import (
     GACHA_EXTRA_REGIONS,
@@ -59,6 +69,119 @@ MIN_H = 12
 ALPHA_NORMAL = 0.20
 ALPHA_SELECTED = 0.40
 
+_RESIZE_CURSORS = {
+    "e": Qt.CursorShape.SizeHorCursor,
+    "s": Qt.CursorShape.SizeVerCursor,
+    "se": Qt.CursorShape.SizeFDiagCursor,
+}
+
+
+def _event_global_xy(event) -> tuple[float, float]:
+    pos = event.globalPosition()
+    return pos.x(), pos.y()
+
+
+class _ArrowKeyEventFilter(QObject):
+    """Application-wide arrow nudge when overlays are visible."""
+
+    def __init__(self, manager: OverlayManager):
+        super().__init__()
+        self._manager = manager
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() != QEvent.Type.KeyPress:
+            return False
+        if not self._manager.active:
+            return False
+        if self._manager._focus_is_text_input():
+            return False
+        if self._manager.selected is None:
+            return False
+
+        step = (
+            10
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+            else 1
+        )
+        key = event.key()
+        dx = dy = 0
+        if key == Qt.Key.Key_Up:
+            dy = -step
+        elif key == Qt.Key.Key_Down:
+            dy = step
+        elif key == Qt.Key.Key_Left:
+            dx = -step
+        elif key == Qt.Key.Key_Right:
+            dx = step
+        else:
+            return False
+
+        self._manager.nudge_selected(dx, dy)
+        return True
+
+
+class OverlayRegionWidget(QWidget):
+    """Single semi-transparent scan region overlay."""
+
+    def __init__(
+        self,
+        manager: OverlayManager,
+        row_idx,
+        col_name: str,
+        x: int,
+        y: int,
+        w: int,
+        h: int,
+        color: str,
+        label_text: str,
+    ):
+        super().__init__(None)
+        self.manager = manager
+        self.row_idx = row_idx
+        self.col_name = col_name
+        self.drag_moved = False
+        self.content_frame = self
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.setGeometry(x, y, w, h)
+        self.setWindowOpacity(ALPHA_NORMAL)
+        self.setStyleSheet(f"background-color: {color};")
+
+        self.corner_label = QLabel(label_text, self)
+        self.corner_label.setStyleSheet(
+            f"color: #ffffff; background-color: {color}; padding: 1px 3px;"
+        )
+        label_font = QFont("Segoe UI", 7)
+        label_font.setBold(True)
+        self.corner_label.setFont(label_font)
+        self.corner_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self.corner_label.move(0, 0)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.manager.start_drag(event, self)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self.manager.do_drag(event, self)
+        else:
+            self.manager._on_hover(event, self)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.manager.end_drag(event, self)
+        super().mouseReleaseEvent(event)
+
 
 class OverlayManager:
     def __init__(self, root, config_manager, fonts=None, on_update_callback=None):
@@ -78,6 +201,7 @@ class OverlayManager:
         self.dragging_overlay = None
         self.resize_edge = None  # None | "e" | "s" | "se"
         self._keys_bound = False
+        self._arrow_filter = None
 
     def set_profile(self, profile: str):
         if profile not in ("gunsmoke", "gacha", "inventory"):
@@ -105,7 +229,7 @@ class OverlayManager:
         for overlay in self.overlay_windows:
             if overlay:
                 try:
-                    overlay.destroy()
+                    overlay.close()
                 except Exception:
                     pass
         self.overlay_windows = []
@@ -158,62 +282,31 @@ class OverlayManager:
             else:
                 label_text = f"R{row_idx + 1} {COLUMN_LABEL.get(col_name, col_name)}"
 
-            overlay = tk.Toplevel(self.root)
-            overlay.geometry(f"{w}x{h}+{x}+{y}")
-            overlay.overrideredirect(True)
-            overlay.attributes("-alpha", ALPHA_NORMAL)
-            overlay.attributes("-topmost", True)
-
-            # Full-zone tint; label sits in the top-left of the scan area
-            # (no separate floating label window above the region).
-            frame = tk.Frame(overlay, bg=color, width=w, height=h, cursor="fleur")
-            frame.pack(fill=tk.BOTH, expand=True)
-            frame.pack_propagate(False)
-
-            corner = tk.Label(
-                frame,
-                text=label_text,
-                bg=color,
-                fg="#ffffff",
-                font=("Segoe UI", 7, "bold"),
-                padx=3,
-                pady=1,
-                anchor=tk.NW,
+            overlay = OverlayRegionWidget(
+                self, row_idx, col_name, x, y, w, h, color, label_text
             )
-            corner.place(x=0, y=0, anchor=tk.NW)
-
-            overlay.row_idx = row_idx
-            overlay.col_name = col_name
-            overlay.content_frame = frame
-            overlay.corner_label = corner
-
-            for widget in (frame, corner):
-                widget.bind("<Button-1>", lambda e, o=overlay: self.start_drag(e, o))
-                widget.bind("<B1-Motion>", lambda e, o=overlay: self.do_drag(e, o))
-                widget.bind(
-                    "<ButtonRelease-1>", lambda e, o=overlay: self.end_drag(e, o)
-                )
-            frame.bind("<Motion>", lambda e, o=overlay: self._on_hover(e, o))
-
+            overlay.show()
             self.overlay_windows.append(overlay)
 
         self._ensure_keys_bound()
         self._update_selection_visual()
 
     def _ensure_keys_bound(self):
-        """Bind arrow nudges once; handler no-ops when overlays are hidden."""
+        """Install arrow nudge filter once; handler no-ops when overlays are hidden."""
         if self._keys_bound:
             return
-        for key in ("<Up>", "<Down>", "<Left>", "<Right>"):
-            self.root.bind_all(key, self._on_arrow_key, add="+")
+        app = QApplication.instance()
+        if app is None:
+            return
+        self._arrow_filter = _ArrowKeyEventFilter(self)
+        app.installEventFilter(self._arrow_filter)
         self._keys_bound = True
 
     def _focus_is_text_input(self) -> bool:
-        w = self.root.focus_get()
+        w = QApplication.focusWidget()
         if w is None:
             return False
-        cls = w.winfo_class()
-        if cls in ("Entry", "Text", "TEntry", "Spinbox"):
+        if isinstance(w, (QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox)):
             return True
         name = type(w).__name__.lower()
         return "entry" in name or "text" in name
@@ -229,36 +322,12 @@ class OverlayManager:
             self.on_update_callback(row_idx, col_name)
         return True
 
-    def _on_arrow_key(self, event):
-        # Entries handle their own arrows (nudge X/Y/W/H). Overlay nudge runs
-        # only when focus is elsewhere and overlays are visible.
-        if not self.active or self._focus_is_text_input():
-            return
-        if self.selected is None:
-            return
-
-        step = 10 if (event.state & 0x0001) else 1  # Shift = coarse
-        dx = dy = 0
-        if event.keysym == "Up":
-            dy = -step
-        elif event.keysym == "Down":
-            dy = step
-        elif event.keysym == "Left":
-            dx = -step
-        elif event.keysym == "Right":
-            dx = step
-        else:
-            return
-
-        self.nudge_selected(dx, dy)
-        return "break"
-
     def _hit_resize_edge(self, event, overlay):
-        # Use screen coords so hits work from the corner label too.
-        w = max(overlay.winfo_width(), 1)
-        h = max(overlay.winfo_height(), 1)
-        local_x = event.x_root - overlay.winfo_rootx()
-        local_y = event.y_root - overlay.winfo_rooty()
+        local = overlay.mapFromGlobal(event.globalPosition().toPoint())
+        w = max(overlay.width(), 1)
+        h = max(overlay.height(), 1)
+        local_x = local.x()
+        local_y = local.y()
         near_e = local_x >= w - EDGE_PX
         near_s = local_y >= h - EDGE_PX
         if near_e and near_s:
@@ -273,13 +342,10 @@ class OverlayManager:
         if self.dragging:
             return
         edge = self._hit_resize_edge(event, overlay)
-        cursors = {
-            "e": "sb_h_double_arrow",
-            "s": "sb_v_double_arrow",
-            "se": "bottom_right_corner",
-        }
         try:
-            overlay.content_frame.configure(cursor=cursors.get(edge, "fleur"))
+            overlay.content_frame.setCursor(
+                QCursor(_RESIZE_CURSORS.get(edge, Qt.CursorShape.SizeAllCursor))
+            )
         except Exception:
             pass
 
@@ -330,22 +396,22 @@ class OverlayManager:
             except Exception:
                 continue
             x, y, w, h = bbox
-            overlay.geometry(f"{w}x{h}+{x}+{y}")
+            overlay.setGeometry(x, y, w, h)
         self._update_selection_visual()
 
     def _update_selection_visual(self):
         for overlay in self.overlay_windows:
             is_sel = self.selected == (overlay.row_idx, overlay.col_name)
             try:
-                overlay.attributes(
-                    "-alpha", ALPHA_SELECTED if is_sel else ALPHA_NORMAL
+                overlay.setWindowOpacity(
+                    ALPHA_SELECTED if is_sel else ALPHA_NORMAL
                 )
             except Exception:
                 pass
 
     def start_drag(self, event, overlay):
         self.dragging = True
-        self.drag_start = (event.x_root, event.y_root)
+        self.drag_start = _event_global_xy(event)
         self.dragging_overlay = overlay
         overlay.drag_moved = False
         self.resize_edge = self._hit_resize_edge(event, overlay)
@@ -360,8 +426,9 @@ class OverlayManager:
         if not self.dragging or self.dragging_overlay != overlay:
             return
 
-        dx = event.x_root - self.drag_start[0]
-        dy = event.y_root - self.drag_start[1]
+        gx, gy = _event_global_xy(event)
+        dx = gx - self.drag_start[0]
+        dy = gy - self.drag_start[1]
 
         if abs(dx) > 2 or abs(dy) > 2:
             overlay.drag_moved = True
@@ -379,7 +446,7 @@ class OverlayManager:
                 overlay.row_idx, overlay.col_name, [new_x, new_y, new_w, new_h]
             )
             # Resize applies to the active region only (use Fill others for W/H)
-            overlay.geometry(f"{new_w}x{new_h}+{new_x}+{new_y}")
+            overlay.setGeometry(new_x, new_y, new_w, new_h)
         else:
             self._apply_delta(overlay.row_idx, overlay.col_name, dx, dy)
             self.sync_geometries()
@@ -387,7 +454,7 @@ class OverlayManager:
         if self.on_update_callback:
             self.on_update_callback(overlay.row_idx, overlay.col_name)
 
-        self.drag_start = (event.x_root, event.y_root)
+        self.drag_start = (gx, gy)
 
     def end_drag(self, event, overlay):
         if self.dragging and self.dragging_overlay == overlay:
