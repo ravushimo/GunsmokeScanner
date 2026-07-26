@@ -213,6 +213,8 @@ class OverlayManager:
             return
         was_active = self.active
         self.profile = profile
+        if self.selected is not None and not self._has_region(*self.selected):
+            self.selected = None
         if was_active:
             self.show()
 
@@ -221,7 +223,10 @@ class OverlayManager:
             self.move_lock = mode
 
     def set_selected(self, row_idx, col_name):
-        self.selected = (row_idx, col_name)
+        if not self._has_region(row_idx, col_name):
+            self.selected = None
+        else:
+            self.selected = (row_idx, col_name)
         self._update_selection_visual()
 
     def toggle(self):
@@ -276,7 +281,10 @@ class OverlayManager:
         prev_selected = self.selected
         self.hide()
         self.active = True
-        self.selected = prev_selected
+        if prev_selected is not None and self._has_region(*prev_selected):
+            self.selected = prev_selected
+        else:
+            self.selected = None
 
         for row_idx, col_name, bbox in self._iter_regions():
             # Config is physical (ImageGrab); Qt geometry is logical.
@@ -322,6 +330,10 @@ class OverlayManager:
         if not self.active or self.selected is None:
             return False
         row_idx, col_name = self.selected
+        if not self._has_region(row_idx, col_name):
+            self.selected = None
+            self._update_selection_visual()
+            return False
         self._apply_delta(row_idx, col_name, dx, dy)
         self.sync_geometries()
         if self.on_update_callback:
@@ -369,6 +381,14 @@ class OverlayManager:
         rows = self.config_manager.get("rows")
         return rows[row_idx], col_name, rows[row_idx][col_name]
 
+    def _has_region(self, row_idx, col_name) -> bool:
+        """True when the profile config has a bbox for this region."""
+        try:
+            self._get_bbox_ref(row_idx, col_name)
+            return True
+        except (KeyError, IndexError, TypeError):
+            return False
+
     def _set_bbox(self, row_idx, col_name, bbox):
         container, key, _ = self._get_bbox_ref(row_idx, col_name)
         # Whole pixels only - drag deltas / DPI math must not leak floats into config.
@@ -379,16 +399,17 @@ class OverlayManager:
         if self.move_lock == "column" and row_idx is not None:
             if self.profile == "gacha":
                 n = len(self.config_manager.get_gacha().get("rows", []))
+                targets = [(i, col_name) for i in range(n)]
             elif self.profile == "inventory":
-                return [(row_idx, col_name)]
+                targets = [(row_idx, col_name)]
             else:
                 n = len(self.config_manager.get("rows", []))
-            return [(i, col_name) for i in range(n)]
-
-        if self.move_lock == "row" and row_idx is not None:
-            return [(row_idx, c) for c in self._table_columns()]
-
-        return [(row_idx, col_name)]
+                targets = [(i, col_name) for i in range(n)]
+        elif self.move_lock == "row" and row_idx is not None:
+            targets = [(row_idx, c) for c in self._table_columns()]
+        else:
+            targets = [(row_idx, col_name)]
+        return [t for t in targets if self._has_region(*t)]
 
     def _apply_delta(self, row_idx, col_name, dx, dy):
         for r, c in self._targets_for_move(row_idx, col_name):

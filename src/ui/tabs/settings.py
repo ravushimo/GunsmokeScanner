@@ -6,6 +6,7 @@ import threading
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -157,13 +159,19 @@ class SettingsTab(QWidget):
         )
         lay.addLayout(custom_row)
 
-        self.custom_list_lbl = QLabel("", frame)
-        self.custom_list_lbl.setFont(self.fonts.caption)
-        self.custom_list_lbl.setWordWrap(True)
-        self.custom_list_lbl.setStyleSheet(
+        extras_header = QLabel("Installed extras", frame)
+        extras_header.setFont(self.fonts.caption)
+        extras_header.setStyleSheet(
             f"color: {THEME['text_muted']}; background: transparent;"
         )
-        lay.addWidget(self.custom_list_lbl)
+        lay.addWidget(extras_header)
+
+        self._extras_host = QWidget(frame)
+        self._extras_host.setStyleSheet("background: transparent;")
+        self._extras_lay = QHBoxLayout(self._extras_host)
+        self._extras_lay.setContentsMargins(0, 0, 0, 0)
+        self._extras_lay.setSpacing(6)
+        lay.addWidget(self._extras_host)
 
         self.active_langs_lbl = QLabel("", frame)
         self.active_langs_lbl.setFont(self.fonts.body)
@@ -287,16 +295,93 @@ class SettingsTab(QWidget):
                 langs.append(code)
         return langs
 
+    def _lang_display_name(self, code: str) -> str:
+        for label, preset_code, name in OCR_LANG_PRESETS:
+            if preset_code == code:
+                return f"{label} - {name}"
+        for custom_code, name in OCR_LANG_CUSTOM_CHOICES:
+            if custom_code == code:
+                return f"{name} ({code})"
+        return code
+
+    def _make_lang_chip(self, code: str) -> QWidget:
+        chip = QFrame()
+        chip.setObjectName("LangChip")
+        chip.setStyleSheet(
+            f"QFrame#LangChip {{"
+            f" background-color: {THEME['bg_raised']};"
+            f" border: 1px solid {THEME['border']};"
+            f" border-radius: 4px;"
+            f"}}"
+        )
+        row = QHBoxLayout(chip)
+        row.setContentsMargins(8, 2, 2, 2)
+        row.setSpacing(4)
+
+        lbl = QLabel(self._lang_display_name(code), chip)
+        lbl.setFont(self.fonts.body)
+        lbl.setStyleSheet(f"color: {THEME['text_primary']}; background: transparent;")
+        row.addWidget(lbl)
+
+        remove = QPushButton("X", chip)
+        remove.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        remove.setFixedSize(22, 22)
+        remove.setToolTip(f"Remove {code}")
+        remove.setStyleSheet(
+            f"QPushButton {{"
+            f" background-color: transparent;"
+            f" color: {THEME['text_strong']};"
+            f" border: none;"
+            f" border-radius: 3px;"
+            f" padding: 0;"
+            f" font-weight: 700;"
+            f" font-size: 11pt;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f" color: #ffffff;"
+            f" background-color: #a33a3a;"
+            f"}}"
+        )
+        remove.clicked.connect(lambda _=False, c=code: self._remove_lang(c))
+        row.addWidget(remove)
+        return chip
+
+    def _clear_extras_layout(self) -> None:
+        while self._extras_lay.count():
+            item = self._extras_lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
     def _refresh_lang_labels(self) -> None:
-        if self._custom_langs:
-            self.custom_list_lbl.setText(
-                "Custom: " + ", ".join(self._custom_langs) + "  (Clear extras to remove)"
+        self._clear_extras_layout()
+        extras = [c for c in self._selected_languages() if c != OCR_LANG_EN]
+        if not extras:
+            empty = QLabel("none", self._extras_host)
+            empty.setFont(self.fonts.caption)
+            empty.setStyleSheet(
+                f"color: {THEME['text_muted']}; background: transparent;"
             )
+            self._extras_lay.addWidget(empty)
         else:
-            self.custom_list_lbl.setText("Custom: none")
+            for code in extras:
+                self._extras_lay.addWidget(self._make_lang_chip(code))
+        self._extras_lay.addStretch(1)
         self.active_langs_lbl.setText(
             "Active: " + ", ".join(self._selected_languages())
         )
+
+    def _remove_lang(self, code: str) -> None:
+        if code == OCR_LANG_EN:
+            return
+        btn = self._preset_btns.get(code)
+        if btn is not None:
+            btn.blockSignals(True)
+            btn.setChecked(False)
+            btn.blockSignals(False)
+        if code in self._custom_langs:
+            self._custom_langs.remove(code)
+        self._refresh_lang_labels()
 
     def _on_preset_toggled(self, code: str) -> None:
         btn = self._preset_btns.get(code)

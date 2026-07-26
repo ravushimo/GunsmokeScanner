@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -52,7 +53,17 @@ def _make_label(text: str, font, color: str) -> QLabel:
 
 
 class CaptureTab(QWidget):
-    def __init__(self, parent, config_manager, ocr_processor, season_manager, fonts):
+    def __init__(
+        self,
+        parent,
+        config_manager,
+        ocr_processor,
+        season_manager,
+        fonts,
+        overlay_manager=None,
+        on_overlay_suspend=None,
+        on_overlay_resume=None,
+    ):
         super().__init__(parent)
         self.setStyleSheet(f"background-color: {THEME['bg_canvas']};")
         self.config_manager = config_manager
@@ -60,12 +71,16 @@ class CaptureTab(QWidget):
         self.season_num = season_manager.season_num
         self.season_manager = season_manager
         self.fonts = fonts
+        self.overlay_manager = overlay_manager
+        self.on_overlay_suspend = on_overlay_suspend
+        self.on_overlay_resume = on_overlay_resume
 
         # Internal data is dicts so we can edit cells in-place without
         # reconstructing PlayerScore instances on every keystroke.
         self.captured_data = []
         self.capture_count = 0
         self.is_capturing = False
+        self._restore_overlay = False
 
         self.setup_ui()
 
@@ -208,8 +223,32 @@ class CaptureTab(QWidget):
 
         self.is_capturing = True
         self.status_label.setText("Capturing... (Processing)")
+        self._suspend_overlay_for_capture()
 
         threading.Thread(target=self._capture_logic, daemon=True).start()
+
+    def _suspend_overlay_for_capture(self):
+        """Hide overlays during OCR so they do not tint the grab regions."""
+        self._restore_overlay = False
+        if self.on_overlay_suspend is not None:
+            self._restore_overlay = bool(self.on_overlay_suspend())
+        elif self.overlay_manager is not None and self.overlay_manager.active:
+            self.overlay_manager.hide()
+            self._restore_overlay = True
+        if self._restore_overlay:
+            # Flush close/hide so ImageGrab does not still see tinted regions.
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
+
+    def _resume_overlay_after_capture(self):
+        if not self._restore_overlay:
+            return
+        self._restore_overlay = False
+        if self.on_overlay_resume is not None:
+            self.on_overlay_resume()
+        elif self.overlay_manager is not None and not self.overlay_manager.active:
+            self.overlay_manager.show()
 
     def _capture_logic(self):
         try:
@@ -259,8 +298,12 @@ class CaptureTab(QWidget):
         except Exception as e:
             print(f"Capture error: {e}")
             err = str(e)
-            call_soon(lambda msg=err: self.status_label.setText(f"Error: {msg}"))
-            self.is_capturing = False
+            call_soon(lambda msg=err: self._on_capture_error(msg))
+
+    def _on_capture_error(self, msg: str):
+        self.status_label.setText(f"Error: {msg}")
+        self.is_capturing = False
+        self._resume_overlay_after_capture()
 
     def _on_capture_complete(self, batch):
         self.capture_count += 1
@@ -279,6 +322,7 @@ class CaptureTab(QWidget):
         )
         self.status_label.setText(f"Captured {len(batch)} new players.")
         self.is_capturing = False
+        self._resume_overlay_after_capture()
 
     def refresh_table(self):
         self.table.blockSignals(True)

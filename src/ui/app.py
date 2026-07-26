@@ -444,6 +444,9 @@ class GunsmokeApp:
                 self.ocr_processor,
                 self.season_manager,
                 self.fonts,
+                overlay_manager=self.overlay_manager,
+                on_overlay_suspend=self.suspend_overlay_temporarily,
+                on_overlay_resume=self.resume_overlay_after_suspend,
             ),
         )
 
@@ -609,6 +612,24 @@ class GunsmokeApp:
 
     def force_overlay_off(self):
         self.set_overlay_visible(False)
+
+    def suspend_overlay_temporarily(self) -> bool:
+        """Hide overlay windows for a scan without clearing the F10 preference.
+
+        Returns True if overlays should be restored when the scan finishes.
+        """
+        restore = bool(self.overlay_manager.active or self._overlay_on)
+        if self.overlay_manager.active:
+            self.overlay_manager.hide()
+        return restore
+
+    def resume_overlay_after_suspend(self):
+        """Show overlays again after a temporary scan hide, if still preferred on."""
+        if not self._overlay_on:
+            return
+        self._sync_overlay_profile()
+        if not self.overlay_manager.active:
+            self.overlay_manager.show()
 
     def _sync_overlay_profile(self):
         if self._mode == "gacha" and self._tab_id == "setup":
