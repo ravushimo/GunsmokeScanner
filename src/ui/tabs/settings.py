@@ -51,8 +51,10 @@ class SettingsTab(QWidget):
         ocr_processor,
         always_on_top: bool,
         overlay_on: bool,
+        load_ocr_on_startup: bool = False,
         on_always_on_top: Callable[[bool], None],
         on_overlay: Callable[[bool], None],
+        on_load_ocr_on_startup: Optional[Callable[[bool], None]] = None,
         on_languages_applied: Optional[Callable[[list], None]] = None,
         on_check_updates: Optional[Callable[[], None]] = None,
     ):
@@ -62,6 +64,7 @@ class SettingsTab(QWidget):
         self.ocr_processor = ocr_processor
         self._on_always_on_top = on_always_on_top
         self._on_overlay = on_overlay
+        self._on_load_ocr_on_startup = on_load_ocr_on_startup
         self._on_languages_applied = on_languages_applied
         self._on_check_updates = on_check_updates
         self._custom_langs: list[str] = []
@@ -94,7 +97,11 @@ class SettingsTab(QWidget):
         root.addWidget(title)
 
         root.addWidget(self._build_ocr_section())
-        root.addWidget(self._build_window_section(always_on_top, overlay_on))
+        root.addWidget(
+            self._build_window_section(
+                always_on_top, overlay_on, load_ocr_on_startup
+            )
+        )
         root.addWidget(self._build_keybinds_section())
         root.addWidget(self._build_updates_section())
         root.addStretch(1)
@@ -202,7 +209,9 @@ class SettingsTab(QWidget):
         lay.addLayout(apply_row)
         return frame
 
-    def _build_window_section(self, always_on_top: bool, overlay_on: bool) -> QWidget:
+    def _build_window_section(
+        self, always_on_top: bool, overlay_on: bool, load_ocr_on_startup: bool
+    ) -> QWidget:
         frame = section_frame(self)
         lay = QVBoxLayout(frame)
         lay.setContentsMargins(0, 0, 0, 8)
@@ -221,7 +230,25 @@ class SettingsTab(QWidget):
         self.overlay_check.toggled.connect(self._on_overlay)
         lay.addWidget(self.overlay_check)
         lay.addWidget(self._hint(frame, "Overlay can also be toggled with F10."))
+
+        self.load_ocr_check = QCheckBox("Load OCR libraries on startup", frame)
+        self.load_ocr_check.setFont(self.fonts.body)
+        self.load_ocr_check.setChecked(load_ocr_on_startup)
+        self.load_ocr_check.toggled.connect(self._on_load_ocr_toggled)
+        lay.addWidget(self.load_ocr_check)
+        lay.addWidget(
+            self._hint(
+                frame,
+                "Off (default): splash opens quickly, then OCR loads in the "
+                "background with a bottom status bar. On: splash waits for OCR "
+                "before the main window (useful on slow disks).",
+            )
+        )
         return frame
+
+    def _on_load_ocr_toggled(self, on: bool) -> None:
+        if self._on_load_ocr_on_startup is not None:
+            self._on_load_ocr_on_startup(bool(on))
 
     def _build_keybinds_section(self) -> QWidget:
         frame = section_frame(self)

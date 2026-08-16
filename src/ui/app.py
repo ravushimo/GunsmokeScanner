@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QStackedWidget,
+    QStatusBar,
     QVBoxLayout,
     QWidget,
 )
@@ -77,14 +79,16 @@ class _MainWindow(QMainWindow):
 
 
 class GunsmokeApp:
-    def __init__(self):
-        self.app = QApplication.instance() or QApplication(sys.argv)
+    def __init__(self, qt_app: QApplication | None = None, splash: StartupSplash | None = None):
+        self.app = qt_app or QApplication.instance() or QApplication(sys.argv)
         self.app.setApplicationName("Gunsmoke Scanner")
         self.app.setStyle("Fusion")
         warm_call_soon()
 
-        splash = StartupSplash()
-        splash.show_centered()
+        if splash is None:
+            splash = StartupSplash()
+            splash.show_centered()
+        self._splash = splash
 
         def status(pct: int, msg: str) -> None:
             splash.set_progress(pct, msg)
@@ -92,6 +96,8 @@ class GunsmokeApp:
         status(5, "Loading configuration...")
         self.config_manager = ConfigManager()
         self.config_manager.ensure_ui_config()
+        ui_boot = self.config_manager.get_ui()
+        load_ocr_on_startup = bool(ui_boot.get("load_ocr_on_startup", False))
 
         status(15, "Loading fonts...")
         self.fonts = load_fonts()
@@ -104,30 +110,45 @@ class GunsmokeApp:
         self.inventory_db = InventoryDB()
 
         langs = self.config_manager.get_ocr_languages()
-        lang_label = ", ".join(langs)
-        status(40, f"Loading EasyOCR ({lang_label})...")
-        splash.set_busy(True)
+        # Construct without EasyOCR; load on splash and/or in the background.
+        self.ocr_processor = OCRProcessor(langs, load_now=False)
+        self._ocr_bg_started = False
+        self._ocr_status_label: QLabel | None = None
+        self._ocr_progress: QProgressBar | None = None
 
-        def on_ocr_download(name: str, downloaded: int, total: int) -> None:
-            from src.core.ocr import format_byte_size
+        if load_ocr_on_startup:
+            lang_label = ", ".join(langs)
+            splash.set_hint("First launch may download EasyOCR models.")
+            status(35, f"Loading EasyOCR ({lang_label})...")
+            splash.set_busy(True)
 
-            # Map file download into the EasyOCR boot slice (~40-68).
-            if total > 0:
-                pct = min(100, int(downloaded * 100 / total))
-                mapped = 40 + int(pct * 0.28)
-                msg = (
-                    f"Downloading {name}... "
-                    f"{format_byte_size(downloaded)} / {format_byte_size(total)}"
+            def on_ocr_download(name: str, downloaded: int, total: int) -> None:
+                from src.core.ocr import format_byte_size
+
+                if total > 0:
+                    pct = min(100, int(downloaded * 100 / total))
+                    mapped = 35 + int(pct * 0.30)
+                    msg = (
+                        f"Downloading {name}... "
+                        f"{format_byte_size(downloaded)} / {format_byte_size(total)}"
+                    )
+                else:
+                    mapped = 35
+                    msg = f"Downloading {name}... {format_byte_size(downloaded)}"
+                status(mapped, msg)
+
+            def on_ocr_status(msg: str) -> None:
+                splash.set_busy(True)
+                status(40, msg)
+
+            try:
+                self.ocr_processor.load(
+                    on_download_progress=on_ocr_download,
+                    on_status=on_ocr_status,
                 )
-            else:
-                mapped = 40
-                msg = f"Downloading {name}... {format_byte_size(downloaded)}"
-            status(mapped, msg)
-
-        self.ocr_processor = OCRProcessor(
-            langs, on_download_progress=on_ocr_download
-        )
-        splash.set_busy(False)
+            except Exception as e:
+                print(f"OCR startup load failed: {e}")
+            splash.set_busy(False)
 
         status(70, "Building interface...")
         self.root = _MainWindow(self)
@@ -159,6 +180,7 @@ class GunsmokeApp:
         self._overlay_on = False
 
         self.setup_ui()
+        self._setup_ocr_status_bar()
         status(90, "Restoring last session...")
         self._restore_ui_state()
 
@@ -176,6 +198,148 @@ class GunsmokeApp:
         status(100, "Ready")
         splash.close()
         splash.deleteLater()
+        self._splash = None
+
+    def _setup_ocr_status_bar(self) -> None:
+        bar = QStatusBar(self.root)
+        bar.setSizeGripEnabled(False)
+        bar.setStyleSheet(
+            f"QStatusBar {{"
+            f" background-color: {THEME['bg_raised']};"
+            f" color: {THEME['text_primary']};"
+            f" border-top: 1px solid {THEME['border']};"
+            f"}}"
+        )
+        self._ocr_status_label = QLabel("", bar)
+        self._ocr_status_label.setFont(self.fonts.caption)
+        self._ocr_status_label.setStyleSheet(
+            f"color: {THEME['text_primary']}; background: transparent;"
+        )
+        self._ocr_progress = QProgressBar(bar)
+        self._ocr_progress.setFixedWidth(140)
+        self._ocr_progress.setFixedHeight(12)
+        self._ocr_progress.setTextVisible(False)
+        self._ocr_progress.setRange(0, 100)
+        self._ocr_progress.setValue(0)
+        self._ocr_progress.setStyleSheet(
+            f"QProgressBar {{"
+            f" background-color: {THEME['bg_canvas']};"
+            f" border: none; border-radius: 3px;"
+            f"}}"
+            f"QProgressBar::chunk {{"
+            f" background-color: {THEME['cta_dark']};"
+            f" border-radius: 3px;"
+            f"}}"
+        )
+        bar.addWidget(self._ocr_status_label, 1)
+        bar.addPermanentWidget(self._ocr_progress)
+        self.root.setStatusBar(bar)
+        bar.hide()
+
+    def _set_ocr_status_ui(
+        self,
+        *,
+        visible: bool,
+        message: str = "",
+        percent: int | None = None,
+        busy: bool = False,
+    ) -> None:
+        bar = self.root.statusBar()
+        if bar is None or self._ocr_status_label is None or self._ocr_progress is None:
+            return
+        if not visible:
+            bar.hide()
+            return
+        bar.show()
+        self._ocr_status_label.setText(message)
+        if busy:
+            self._ocr_progress.setRange(0, 0)
+        else:
+            if self._ocr_progress.minimum() == 0 and self._ocr_progress.maximum() == 0:
+                self._ocr_progress.setRange(0, 100)
+            if percent is not None:
+                self._ocr_progress.setValue(max(0, min(100, int(percent))))
+
+    def _start_background_ocr_load(self) -> None:
+        if self.ocr_processor.is_ready or self._ocr_bg_started:
+            return
+        self._ocr_bg_started = True
+
+        def on_status(msg: str) -> None:
+            call_soon(
+                lambda m=msg: self._set_ocr_status_ui(
+                    visible=True, message=m, busy=True
+                )
+            )
+
+        def on_download(name: str, downloaded: int, total: int) -> None:
+            from src.core.ocr import format_byte_size
+
+            if total > 0:
+                pct = min(100, int(downloaded * 100 / total))
+                msg = (
+                    f"Downloading {name}... "
+                    f"{format_byte_size(downloaded)} / {format_byte_size(total)}"
+                )
+            else:
+                pct = None
+                msg = f"Downloading {name}... {format_byte_size(downloaded)}"
+
+            def ui(p=pct, m=msg):
+                self._set_ocr_status_ui(
+                    visible=True,
+                    message=m,
+                    percent=p if p is not None else 0,
+                    busy=p is None,
+                )
+
+            call_soon(ui)
+
+        def work():
+            err = None
+            try:
+                call_soon(
+                    lambda: self._set_ocr_status_ui(
+                        visible=True,
+                        message="Loading EasyOCR...",
+                        busy=True,
+                    )
+                )
+                self.ocr_processor.load(
+                    on_download_progress=on_download,
+                    on_status=on_status,
+                )
+            except Exception as e:
+                err = str(e)
+
+            def done():
+                if err:
+                    self._set_ocr_status_ui(
+                        visible=True,
+                        message=f"OCR load failed: {err}",
+                        percent=0,
+                        busy=False,
+                    )
+                    return
+                self._set_ocr_status_ui(
+                    visible=True,
+                    message="OCR ready",
+                    percent=100,
+                    busy=False,
+                )
+
+                def hide():
+                    if self.ocr_processor.is_ready:
+                        self._set_ocr_status_ui(visible=False)
+
+                # Brief confirmation, then clear the bar.
+                from PySide6.QtCore import QTimer
+
+                QTimer.singleShot(1800, hide)
+
+            call_soon(done)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _on_f9(self):
         if self._mode == "inventory":
@@ -555,8 +719,10 @@ class GunsmokeApp:
                 ocr_processor=self.ocr_processor,
                 always_on_top=bool(ui.get("always_on_top", True)),
                 overlay_on=self._overlay_on,
+                load_ocr_on_startup=bool(ui.get("load_ocr_on_startup", False)),
                 on_always_on_top=lambda on: self.set_always_on_top(on, persist=True),
                 on_overlay=self.set_overlay_visible,
+                on_load_ocr_on_startup=self.set_load_ocr_on_startup,
                 on_check_updates=self._check_updates_from_settings,
             ),
         )
@@ -657,8 +823,15 @@ class GunsmokeApp:
         if persist:
             self.config_manager.set_always_on_top(on)
 
+    def set_load_ocr_on_startup(self, on: bool) -> None:
+        self.config_manager.set_load_ocr_on_startup(bool(on))
+
     def run(self):
         self.root.show()
+        # After the window is visible, warm EasyOCR in the background unless
+        # it was already loaded during splash (Settings: load on startup).
+        if not self.ocr_processor.is_ready:
+            call_soon(self._start_background_ocr_load)
         sys.exit(self.app.exec())
 
     def on_closing(self):

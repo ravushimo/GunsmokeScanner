@@ -23,7 +23,6 @@ ENV/
 .venv/
 .venv
 .venv-build-cpu/
-.venv-build-cuda/
 
 # --- Local secrets & runtime data (do not commit) ---
 # Hashed upload password and calibrated regions live here

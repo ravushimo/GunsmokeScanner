@@ -10,9 +10,6 @@ requests==2.33.1
 cryptography==47.0.0
 PySide6-Essentials==6.11.1
 pyinstaller==6.20.0
-# Default PyPI wheels are CPU-only. After pip install, run:
-#   python scripts/ensure_torch.py
-# (or setup.bat option 1) to swap in CUDA torch when an NVIDIA GPU is detected.
-# ensure_torch tries cu128 -> cu126 -> cu124, then falls back to CPU if CUDA fails.
+# PyPI wheels are CPU-only. setup.bat / scripts/ensure_torch.py keep torch on CPU.
 torch==2.11.0
 torchvision==0.26.0

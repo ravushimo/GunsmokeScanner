@@ -106,6 +106,8 @@ DEFAULT_UI = {
         "settings": "main",
     },
     "always_on_top": True,
+    # When False (default), EasyOCR loads in the background after the UI opens.
+    "load_ocr_on_startup": False,
 }
 
 # EasyOCR language codes. English is always included; Asian extras are optional.
@@ -172,4 +174,4 @@ INVENTORY_GROWTH_REGIONS = (
     "own_count",
 )
 
-APP_VERSION = "1.4.2-dev"
+APP_VERSION = "1.4.5-dev"

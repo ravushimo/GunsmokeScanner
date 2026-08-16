@@ -132,10 +132,8 @@ class ConfigManager:
         center_y = screen_h // 2
 
         self.config = DEFAULT_CONFIG.copy()
-        self.config["ui"] = {
-            "mode": DEFAULT_UI["mode"],
-            "last_tab": dict(DEFAULT_UI["last_tab"]),
-        }
+        self.config["ui"] = dict(DEFAULT_UI)
+        self.config["ui"]["last_tab"] = dict(DEFAULT_UI["last_tab"])
         self.config["screen_resolution"] = [screen_w, screen_h]
         self.config["rows"] = []
 
@@ -244,7 +242,7 @@ class ConfigManager:
         return self.config["inventory"]["growth"]
 
     def ensure_ui_config(self) -> None:
-        """Ensure ui.mode / ui.last_tab / ui.always_on_top exist with valid values."""
+        """Ensure ui.mode / ui.last_tab / window prefs exist with valid values."""
         ui = self.config.get("ui")
         changed = False
         if not isinstance(ui, dict):
@@ -252,6 +250,7 @@ class ConfigManager:
                 "mode": DEFAULT_UI["mode"],
                 "last_tab": dict(DEFAULT_UI["last_tab"]),
                 "always_on_top": DEFAULT_UI.get("always_on_top", True),
+                "load_ocr_on_startup": DEFAULT_UI.get("load_ocr_on_startup", False),
             }
             self.save_config()
             return
@@ -275,8 +274,19 @@ class ConfigManager:
             ui["always_on_top"] = DEFAULT_UI.get("always_on_top", True)
             changed = True
 
+        if "load_ocr_on_startup" not in ui or not isinstance(
+            ui.get("load_ocr_on_startup"), bool
+        ):
+            ui["load_ocr_on_startup"] = DEFAULT_UI.get("load_ocr_on_startup", False)
+            changed = True
+
         if changed:
             self.save_config()
+
+    def set_load_ocr_on_startup(self, enabled: bool) -> None:
+        ui = self.get_ui()
+        ui["load_ocr_on_startup"] = bool(enabled)
+        self.save_config()
 
     def get_ocr_languages(self) -> list:
         langs = self.config.get("ocr_languages")

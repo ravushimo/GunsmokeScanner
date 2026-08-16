@@ -59,10 +59,8 @@ Fonts: IBM Plex Sans bundled under `assets/fonts/`.
 setup.bat
 ```
 
-Choose **1) Install dependencies** (recommended / default), or run `setup.bat setup`. You will be asked:
-
-- **CPU** (~1 GB torch stack) - default; works everywhere
-- **CUDA** (~4-5 GB) - NVIDIA GPU OCR
+Choose **1) Install dependencies** (recommended / default), or run `setup.bat setup`.
+This creates `.venv` and installs CPU PyTorch (no GPU/CUDA build).
 
 Then:
 
@@ -71,8 +69,6 @@ start.bat
 ```
 
 Or: `.venv\Scripts\python.exe main.py`
-
-At runtime EasyOCR uses GPU automatically when the installed torch build has CUDA and a GPU is visible. **Card model does not matter** for the CUDA wheel (any recent RTX/GTX with drivers).
 
 Python 3.9+ recommended.
 
@@ -83,7 +79,9 @@ Python 3.9+ recommended.
 3. Pick **Gunsmoke**, **Gacha**, **Inventory**, or **Settings** in the header
 4. Calibrate regions in **Setup**, then use **Capture**
 
-Official releases ship the CPU build only (works with or without an NVIDIA GPU; OCR stays on CPU). A CUDA/GPU build is not published because the CUDA libraries alone are over ~4 GB. If you want GPU OCR, clone the repo and self-compile with `setup.bat` (option 1, then 2 or 3) on a machine with NVIDIA drivers - see **Building** below.
+OCR runs on CPU. EasyOCR loads in the background after the window opens by default
+(see Settings -> Load OCR libraries on startup). Models download into `easyocr_models\`
+on first use.
 
 ## Building
 
@@ -95,27 +93,25 @@ setup.bat
 
 | Menu | What it does |
 |------|----------------|
-| **1) Install dependencies** | Create/refresh `.venv`, install requirements, then choose **CPU** (~1 GB) or **CUDA** (~4-5 GB) torch |
-| **2) Build exe from .venv** | PyInstaller using `.venv` from option 1 - output is CPU or CUDA matching that install |
-| **3) Build release** | Developers: cached `.venv-build-cpu` / `.venv-build-cuda` so wheels are not redownloaded each time |
+| **1) Install dependencies** | Create/refresh `.venv`, install requirements + CPU torch |
+| **2) Build exe from .venv** | PyInstaller using `.venv` from option 1 -> `dist/GunsmokeScanner-CPU/` |
+| **3) Build release** | Developers: cached `.venv-build-cpu` so wheels are not redownloaded each time |
 
-Release submenu: CPU only (default) / CUDA only (NVIDIA) / Both, then optional 7-Zip (default No).
+Optional 7-Zip archive after build (default No).
 
 | Env | Purpose |
 |-----|---------|
 | `.venv` | Run from source + option 2 builds |
 | `.venv-build-cpu` | Cached CPU release toolchain (~1.1 GB) |
-| `.venv-build-cuda` | Cached CUDA release toolchain (~4.7 GB) |
 
 | Output | Notes |
 |--------|--------|
-| `dist/GunsmokeScanner-CPU/` | CPU OCR - smaller; this is what GitHub Releases publish |
-| `dist/GunsmokeScanner-CUDA/` | CUDA OCR - self-compile only (not published; CUDA libs are over ~4 GB) |
-| `dist/GunsmokeScanner-*-vX.Y.Z.7z` | Optional; only if you choose Yes and 7-Zip is available |
+| `dist/GunsmokeScanner-CPU/` | CPU OCR - this is what GitHub Releases publish |
+| `dist/GunsmokeScanner-CPU-vX.Y.Z.7z` | Optional; only if you choose Yes and 7-Zip is available |
 
-Prefer leaving `easyocr_models/` out of releases - models download on first launch
+Prefer leaving `easyocr_models/` out of releases - models download on first use
 into a folder next to the exe (English by default; CN/KR/JP when enabled in Settings).
-Force-refresh release torch caches: `python scripts/bootstrap_build_venvs.py --force`.
+Force-refresh release torch cache: `python scripts/bootstrap_build_venvs.py --force`.
 
 CLI shortcuts: `setup.bat setup` · `setup.bat self` · `setup.bat release`
 
@@ -158,7 +154,7 @@ CLI shortcuts: `setup.bat setup` · `setup.bat self` · `setup.bat release`
 ## Troubleshooting
 
 - **Startup crash** - delete `config.json` and relaunch (defaults regenerate)
-- **Slow first launch** - EasyOCR downloads model files into `easyocr_models\`; later launches are faster
+- **Slow first OCR** - EasyOCR downloads model files into `easyocr_models\` on first use; later scans are faster. Enable **Load OCR libraries on startup** in Settings if you prefer splash-time loading.
 - **Bad OCR** - retune regions; adjust gacha click/settle delays if pages skip; add CN/KR/JP in Settings if needed
 - **Unsigned exe blocked** - Properties -> Unblock on Windows
 

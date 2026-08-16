@@ -1,18 +1,19 @@
 import os
 import re
+import threading
 import time
 from contextlib import contextmanager
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional
 from urllib.request import urlretrieve
 from zipfile import ZipFile
 
 import cv2
-import easyocr
-import easyocr.utils as easyocr_utils
 import numpy as np
 
 # filename, bytes downloaded, total bytes (0 if unknown)
 DownloadProgressCB = Callable[[str, int, int], None]
+# Optional status line while EasyOCR imports / initializes (no download).
+StatusCB = Callable[[str], None]
 
 
 def format_byte_size(n: int) -> str:
@@ -28,30 +29,6 @@ def format_byte_size(n: int) -> str:
     return f"{n / (1024 * 1024 * 1024):.2f} GB"
 
 
-def detect_ocr_device() -> Tuple[bool, str]:
-    """Return (use_gpu, human-readable device label).
-
-    Also smoke-tests a tiny CUDA tensor so an incompatible wheel (wrong
-    compute capability) falls back to CPU instead of crashing mid-OCR.
-    """
-    try:
-        import torch
-
-        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-            name = torch.cuda.get_device_name(0)
-            try:
-                torch.zeros(1, device="cuda")
-            except Exception as e:
-                return False, f"CPU (CUDA present but unusable on {name}: {e})"
-            return True, f"CUDA ({name})"
-        build = getattr(torch.version, "cuda", None)
-        if build is None:
-            return False, "CPU (torch is CPU-only build - run scripts/ensure_torch.py)"
-        return False, "CPU (CUDA build present but no GPU visible)"
-    except Exception as e:
-        return False, f"CPU (torch check failed: {e})"
-
-
 @contextmanager
 def _easyocr_download_progress(on_progress: Optional[DownloadProgressCB]):
     """Route EasyOCR model downloads through on_progress instead of a console bar.
@@ -64,6 +41,7 @@ def _easyocr_download_progress(on_progress: Optional[DownloadProgressCB]):
         return
 
     import easyocr.easyocr as easyocr_main
+    import easyocr.utils as easyocr_utils
 
     original_utils = easyocr_utils.download_and_unzip
     original_main = getattr(easyocr_main, "download_and_unzip", original_utils)
@@ -109,43 +87,108 @@ def _easyocr_download_progress(on_progress: Optional[DownloadProgressCB]):
 
 
 class OCRProcessor:
+    """Lazy EasyOCR wrapper - CPU only. Call load() before OCR or let extract_text wait."""
+
     def __init__(
         self,
         languages: List[str] = None,
+        *,
+        load_now: bool = False,
         on_download_progress: Optional[DownloadProgressCB] = None,
+        on_status: Optional[StatusCB] = None,
     ):
         if languages is None:
             languages = ["en"]
         self.languages = list(languages)
         self.use_gpu = False
         self.reader = None
-        self._load_reader(self.languages, on_download_progress=on_download_progress)
+        self._lock = threading.Lock()
+        self._load_error: Optional[str] = None
+        if load_now:
+            self.load(
+                on_download_progress=on_download_progress,
+                on_status=on_status,
+            )
+
+    @property
+    def is_ready(self) -> bool:
+        return self.reader is not None
+
+    def load(
+        self,
+        languages: Optional[List[str]] = None,
+        on_download_progress: Optional[DownloadProgressCB] = None,
+        on_status: Optional[StatusCB] = None,
+    ) -> None:
+        """Import EasyOCR and build the reader (may download models). Thread-safe."""
+        langs = list(languages) if languages is not None else list(self.languages)
+        langs = [str(x).strip() for x in langs if str(x).strip()]
+        if "en" not in langs:
+            langs.insert(0, "en")
+
+        with self._lock:
+            if self.reader is not None and langs == self.languages:
+                return
+            self._load_reader(
+                langs,
+                on_download_progress=on_download_progress,
+                on_status=on_status,
+            )
+
+    def ensure_ready(
+        self,
+        on_download_progress: Optional[DownloadProgressCB] = None,
+        on_status: Optional[StatusCB] = None,
+    ) -> None:
+        """Block until the reader is available (loads on first use if needed)."""
+        if self.reader is not None:
+            return
+        self.load(
+            on_download_progress=on_download_progress,
+            on_status=on_status,
+        )
 
     def _load_reader(
         self,
         languages: List[str],
         on_download_progress: Optional[DownloadProgressCB] = None,
+        on_status: Optional[StatusCB] = None,
     ) -> None:
-        use_gpu, device_label = detect_ocr_device()
-        print("Loading EasyOCR models...")
-        print(f"EasyOCR languages: {languages}")
-        print(f"EasyOCR device: {device_label}")
-        self.use_gpu = use_gpu
-        self.languages = list(languages)
-        with _easyocr_download_progress(on_download_progress):
-            self.reader = easyocr.Reader(
-                self.languages,
-                gpu=use_gpu,
-                model_storage_directory="./easyocr_models",
-                # Terminal progress goes to our UI callback when present.
-                verbose=on_download_progress is None,
-            )
-        print("EasyOCR ready!")
+        def status(msg: str) -> None:
+            print(msg)
+            if on_status is not None:
+                on_status(msg)
+
+        self._load_error = None
+        try:
+            status("Importing EasyOCR...")
+            import easyocr
+
+            status("Loading EasyOCR models (CPU)...")
+            print(f"EasyOCR languages: {languages}")
+            self.languages = list(languages)
+            self.use_gpu = False
+            with _easyocr_download_progress(on_download_progress):
+                self.reader = easyocr.Reader(
+                    self.languages,
+                    gpu=False,
+                    model_storage_directory="./easyocr_models",
+                    # Terminal progress goes to our UI callback when present.
+                    verbose=on_download_progress is None,
+                )
+            status("EasyOCR ready")
+            print("EasyOCR ready!")
+        except Exception as e:
+            self.reader = None
+            self._load_error = str(e)
+            print(f"EasyOCR load failed: {e}")
+            raise
 
     def set_languages(
         self,
         languages: List[str],
         on_download_progress: Optional[DownloadProgressCB] = None,
+        on_status: Optional[StatusCB] = None,
     ) -> None:
         """Rebuild the EasyOCR reader with a new language list (may download models)."""
         langs = [str(x).strip() for x in languages if str(x).strip()]
@@ -153,7 +196,11 @@ class OCRProcessor:
             langs.insert(0, "en")
         if langs == self.languages and self.reader is not None:
             return
-        self._load_reader(langs, on_download_progress=on_download_progress)
+        self.load(
+            langs,
+            on_download_progress=on_download_progress,
+            on_status=on_status,
+        )
 
     def preprocess_image(
         self, img: np.ndarray, config: dict = None
@@ -197,11 +244,16 @@ class OCRProcessor:
         """Extract text using EasyOCR.
 
         `allowlist` restricts characters when set (e.g. timestamps / page digits).
+        Loads EasyOCR on first use if not already loaded.
         """
         if img is None:
             return ""
 
         try:
+            self.ensure_ready()
+            if self.reader is None:
+                return ""
+
             processed = self.preprocess_image(img, config)
             if processed is None:
                 return ""

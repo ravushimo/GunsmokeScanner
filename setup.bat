@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 REM Setup + build hub (run this first as a new user).
-REM Modes: setup (.venv), self (build from .venv), release (cached build venvs).
+REM Modes: setup (.venv), self (build from .venv), release (cached CPU build venv).
 REM Always pause on success or failure so a double-clicked window stays readable.
 REM Use goto around CALL - avoid multi-line IF blocks that abort cmd early.
 
@@ -19,19 +19,16 @@ echo.
 echo What do you want to do?
 echo.
 echo   1^) Install dependencies  [recommended / default]
-echo        Creates .venv and installs Python packages.
-echo        You choose CPU PyTorch ^(smaller^) or CUDA ^(NVIDIA, larger^).
+echo        Creates .venv and installs Python packages ^(CPU PyTorch^).
 echo        Then use start.bat to launch from source.
 echo.
 echo   2^) Build exe from .venv
-echo        Packages dist\ from your .venv ^(option 1^).
-echo        Result is CPU or CUDA matching whatever torch option 1 installed.
+echo        Packages dist\GunsmokeScanner-CPU\ from your .venv ^(option 1^).
 echo        Requires option 1 first.
 echo.
 echo   3^) Build release ^(developers^)
-echo        Uses separate cached venvs ^(.venv-build-cpu / .venv-build-cuda^)
-echo        so CPU and CUDA toolchains are not redownloaded every time.
-echo        Disk: ~1.1 GB CPU cache, ~4.7 GB CUDA cache.
+echo        Uses cached .venv-build-cpu so wheels are not redownloaded every time.
+echo        Disk for cache: roughly ~1.1 GB.
 echo.
 set "MODE_CHOICE="
 set /p "MODE_CHOICE=Choice [1/2/3] (default 1): "
@@ -52,50 +49,13 @@ echo  Install dependencies
 echo ========================================
 call :ensure_host_python
 if errorlevel 1 goto :die
-call :ask_torch_variant
-if errorlevel 1 goto :die
 call :ensure_dev_venv
 if errorlevel 1 goto :die
 echo.
 echo Done. Next steps:
 echo   - Run start.bat  to launch from source
 echo   - Or run setup.bat again and choose 2 to build an exe
-echo     ^(will be %TORCH_LABEL% matching this .venv^)
 goto :ok
-
-REM ============================================================
-:ask_torch_variant
-echo.
-echo Which PyTorch build for .venv?
-echo.
-echo   1^) CPU  [default]
-echo        Smaller install - works on any PC. OCR runs on CPU.
-echo        Disk for torch stack: roughly ~1 GB.
-echo.
-echo   2^) CUDA / GPU  ^(NVIDIA only^)
-echo        Faster OCR when an NVIDIA GPU + drivers are present.
-echo        Disk for torch stack: roughly ~4-5 GB.
-echo.
-:ask_torch_prompt
-set "TORCH_CHOICE="
-set /p "TORCH_CHOICE=Choice [1/2] (default 1): "
-if "%TORCH_CHOICE%"=="" set "TORCH_CHOICE=1"
-set "TORCH_CHOICE=%TORCH_CHOICE:~0,1%"
-set "TORCH_ARGS="
-set "TORCH_LABEL=CPU"
-if "%TORCH_CHOICE%"=="1" set "TORCH_ARGS=--cpu"
-if "%TORCH_CHOICE%"=="1" set "TORCH_LABEL=CPU"
-if "%TORCH_CHOICE%"=="1" goto ask_torch_done
-if "%TORCH_CHOICE%"=="2" set "TORCH_ARGS=--cuda"
-if "%TORCH_CHOICE%"=="2" set "TORCH_LABEL=CUDA"
-if "%TORCH_CHOICE%"=="2" goto ask_torch_done
-echo Invalid choice. Please enter 1 or 2.
-echo.
-goto ask_torch_prompt
-:ask_torch_done
-echo Selected: %TORCH_LABEL% PyTorch
-echo.
-exit /b 0
 
 REM ============================================================
 :mode_self
@@ -119,59 +79,31 @@ if errorlevel 1 (
 for /f "usebackq delims=" %%i in (`"%VENV_PY%" -c "from src.constants import APP_VERSION; print(APP_VERSION)"`) do set "APP_VER=%%i"
 if not defined APP_VER set "APP_VER=dev"
 
-REM Name the folder from whatever torch is in .venv (from option 1)
-set "SELF_VARIANT=CPU"
-"%VENV_PY%" -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)"
-if not errorlevel 1 set "SELF_VARIANT=CUDA"
-
 echo App version: %APP_VER%
-echo .venv torch -^> %SELF_VARIANT% build
-echo ^(Re-run option 1 and pick the other torch if you want the other variant.^)
 echo.
 
 call :ask_7zip
-call :build_variant %SELF_VARIANT%
+call :build_variant CPU
 if errorlevel 1 goto :die
-if "%DO_7Z%"=="1" call :archive_variant %SELF_VARIANT%
+if "%DO_7Z%"=="1" call :archive_variant CPU
 
 echo.
 echo ========================================
 echo  Done
 echo ========================================
-echo Folder: dist\GunsmokeScanner-%SELF_VARIANT%\
-if "%DO_7Z%"=="1" echo Archive: dist\GunsmokeScanner-%SELF_VARIANT%-v%APP_VER%.7z
+echo Folder: dist\GunsmokeScanner-CPU\
+if "%DO_7Z%"=="1" echo Archive: dist\GunsmokeScanner-CPU-v%APP_VER%.7z
 goto :ok
 
 REM ============================================================
 :mode_release
 echo.
 echo ========================================
-echo  Build release ^(cached venvs / developers^)
+echo  Build release ^(cached CPU venv / developers^)
 echo ========================================
-echo Cached venvs use ~1.1 GB ^(CPU^) and ~4.7 GB ^(CUDA^) on disk.
-echo They are created once and reused so release builds stay fast.
+echo Cached .venv-build-cpu uses ~1.1 GB on disk.
+echo It is created once and reused so release builds stay fast.
 echo.
-:ask_release_variant
-echo Which release to build?
-echo   1^) CPU only  [default]
-echo   2^) CUDA / GPU only  ^(NVIDIA GPUs^)
-echo   3^) Both
-echo.
-set "BUILD_CHOICE="
-set /p "BUILD_CHOICE=Choice [1/2/3] (default 1): "
-if "%BUILD_CHOICE%"=="" set "BUILD_CHOICE=1"
-set "BUILD_CHOICE=%BUILD_CHOICE:~0,1%"
-
-set "DO_CPU=0"
-set "DO_CUDA=0"
-if "%BUILD_CHOICE%"=="1" set "DO_CPU=1"
-if "%BUILD_CHOICE%"=="2" set "DO_CUDA=1"
-if "%BUILD_CHOICE%"=="3" set "DO_CPU=1" & set "DO_CUDA=1"
-if "%DO_CPU%%DO_CUDA%"=="00" (
-  echo Invalid choice. Please enter 1, 2, or 3.
-  echo.
-  goto ask_release_variant
-)
 
 call :ask_7zip
 
@@ -182,23 +114,16 @@ for /f "usebackq delims=" %%i in (`"%HOST_PY%" -c "from src.constants import APP
 if not defined APP_VER set "APP_VER=dev"
 echo App version: %APP_VER%
 echo Host Python: %HOST_PY%
-if "%DO_CPU%"=="1" if "%DO_CUDA%"=="1" echo Plan: CPU + CUDA
-if "%DO_CPU%"=="1" if not "%DO_CUDA%"=="1" echo Plan: CPU only
-if not "%DO_CPU%"=="1" if "%DO_CUDA%"=="1" echo Plan: CUDA only
 echo.
 
-set "BOOT_ARGS="
-if "%DO_CPU%"=="1" set "BOOT_ARGS=!BOOT_ARGS! --cpu"
-if "%DO_CUDA%"=="1" set "BOOT_ARGS=!BOOT_ARGS! --cuda"
-echo Ensuring cached build venv(s)...
-"%HOST_PY%" scripts\bootstrap_build_venvs.py !BOOT_ARGS!
+echo Ensuring cached build venv...
+"%HOST_PY%" scripts\bootstrap_build_venvs.py
 if errorlevel 1 (
   echo [ERROR] Build venv bootstrap failed.
   goto :die
 )
 echo.
 
-if not "%DO_CPU%"=="1" goto after_cpu
 echo ========================================
 echo  Building CPU release
 echo ========================================
@@ -210,38 +135,12 @@ if not exist "!VENV_PY!" (
 call :build_variant CPU
 if errorlevel 1 goto :die
 if "%DO_7Z%"=="1" call :archive_variant CPU
-echo.
-:after_cpu
-
-if not "%DO_CUDA%"=="1" goto after_cuda
-echo ========================================
-echo  Building CUDA release
-echo ========================================
-set "VENV_PY=.venv-build-cuda\Scripts\python.exe"
-if not exist "!VENV_PY!" (
-  echo [ERROR] Missing !VENV_PY!
-  goto :die
-)
-echo Checking CUDA torch in build venv...
-"!VENV_PY!" -c "import torch,sys; print('torch', torch.__version__, 'cuda', torch.cuda.is_available()); sys.exit(0 if torch.cuda.is_available() else 1)"
-if errorlevel 1 (
-  echo [ERROR] torch.cuda.is_available^(^) is False in .venv-build-cuda.
-  echo CUDA build was NOT created. CPU output is still in dist\ if built.
-  goto :die
-)
-call :build_variant CUDA
-if errorlevel 1 goto :die
-if "%DO_7Z%"=="1" call :archive_variant CUDA
-echo.
-:after_cuda
 
 echo ========================================
 echo  Done
 echo ========================================
-if "%DO_CPU%"=="1" echo CPU folder : dist\GunsmokeScanner-CPU\
-if "%DO_CUDA%"=="1" echo CUDA folder: dist\GunsmokeScanner-CUDA\
-if "%DO_7Z%"=="1" if "%DO_CPU%"=="1" echo Archive    : dist\GunsmokeScanner-CPU-v%APP_VER%.7z
-if "%DO_7Z%"=="1" if "%DO_CUDA%"=="1" echo Archive    : dist\GunsmokeScanner-CUDA-v%APP_VER%.7z
+echo CPU folder : dist\GunsmokeScanner-CPU\
+if "%DO_7Z%"=="1" echo Archive    : dist\GunsmokeScanner-CPU-v%APP_VER%.7z
 goto :ok
 
 REM ============================================================
@@ -279,13 +178,13 @@ if errorlevel 1 (
   echo ERROR: pip install failed.
   exit /b 1
 )
-echo Selecting PyTorch for .venv ^(%TORCH_LABEL%^) ...
-"%VENV_PY%" scripts\ensure_torch.py %TORCH_ARGS%
+echo Ensuring CPU PyTorch in .venv ...
+"%VENV_PY%" scripts\ensure_torch.py
 if errorlevel 1 (
   echo ERROR: Torch setup failed.
   exit /b 1
 )
-echo .venv ready ^(%TORCH_LABEL%^).
+echo .venv ready.
 exit /b 0
 
 REM ============================================================
@@ -393,18 +292,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Note: EasyOCR models are not bundled - they download on first run
+echo Note: EasyOCR models are not bundled - they download on first use
 echo       into easyocr_models\ next to the exe (English by default).
 
 > "dist\%NAME%\BUILD.txt" echo Gunsmoke Scanner %VARIANT% build v%APP_VER%
 >> "dist\%NAME%\BUILD.txt" echo.
-if /I "%VARIANT%"=="CUDA" (
-  >> "dist\%NAME%\BUILD.txt" echo Requires an NVIDIA GPU + recent Game Ready / Studio drivers.
-) else (
-  >> "dist\%NAME%\BUILD.txt" echo CPU OCR build - works without an NVIDIA GPU.
-)
+>> "dist\%NAME%\BUILD.txt" echo CPU OCR build - works without an NVIDIA GPU.
 >> "dist\%NAME%\BUILD.txt" echo.
->> "dist\%NAME%\BUILD.txt" echo EasyOCR models download on first launch into easyocr_models\.
+>> "dist\%NAME%\BUILD.txt" echo EasyOCR models download on first use into easyocr_models\.
 >> "dist\%NAME%\BUILD.txt" echo Run GunsmokeScanner-%VARIANT%.exe
 
 echo Built dist\%NAME%\

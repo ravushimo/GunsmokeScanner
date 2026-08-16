@@ -108,12 +108,16 @@ class StartupSplash(QWidget):
         )
         lay.addWidget(self.bar)
 
-        self.hint = QLabel("First launch may download EasyOCR models.")
+        self.hint = QLabel("Please wait while the app starts.")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.hint.setStyleSheet(
             f"color: {THEME['text_muted']}; background: transparent; font-size: 8pt;"
         )
         lay.addWidget(self.hint)
+
+    def set_hint(self, text: str) -> None:
+        self.hint.setText(text)
+        QApplication.processEvents()
 
     def show_centered(self) -> None:
         screen = QApplication.primaryScreen()
