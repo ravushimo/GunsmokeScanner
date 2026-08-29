@@ -2,23 +2,35 @@
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from collections import defaultdict
+from datetime import datetime
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pyautogui
+from PIL import Image
 
 from src.core.scanner import safe_grab
 from src.data.gacha_db import GachaDB
 
+DEBUG_LOG = os.path.join("data", "gacha_scan_debug.log")
+DEBUG_CROPS = os.path.join("data", "gacha_debug")
+
 TIMESTAMP_RE = re.compile(r"(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2}:\d{2})")
+_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+# OCR often drops one colon: 09:1646 (09:16:46) or 0916:46.
+_TIME_FULL_RE = re.compile(r"(\d{2}):(\d{2}):(\d{2})")
+_TIME_MISS_SEC_RE = re.compile(r"(\d{2}):(\d{2})(\d{2})")
+_TIME_MISS_MIN_RE = re.compile(r"(\d{2})(\d{2}):(\d{2})")
+_TIME_DIGITS_RE = re.compile(r"(\d{2})(\d{2})(\d{2})")
 PAGE_RE = re.compile(r"\d+")
 
-# OCR often mangles the trailing "×1" quantity into x1 / *1 / xt / x / etc.
+# OCR often mangles the trailing "×1" quantity into x1 / *1 / xt / x7 / etc.
 _QTY_SUFFIX_PATTERNS = (
-    re.compile(r"[\s]*[×xX*+][\s]*[lI1\|!]{1,2}\s*$"),  # ×1, x1, *1, xl, xI
+    re.compile(r"[\s]*[×xX*+][\s]*[lI17\|!]{1,2}\s*$"),  # ×1, x1, *1, x7, xl
     re.compile(r"[\s]*[×xX][tT]?\s*$"),  # lone x / xt (e.g. Alphaxt)
     re.compile(r"[\s]*[*+]\s*$"),
 )
@@ -68,14 +80,32 @@ def classify_rarity_color(img: np.ndarray) -> str:
     r, g, b = [float(v) for v in pix.mean(axis=0)]
     sat_mean = float((pix.max(axis=1) - pix.min(axis=1)).mean())
 
-    # Elite — gold/orange (~237, 175, 82)
+    # Elite - gold/orange (~237, 175, 82)
     if r > 170 and g > 110 and b < 150 and (r - b) > 50 and sat_mean > 40:
         return "elite"
-    # Standard quality — purple (~180, 123, 231)
+    # Standard quality - purple (~180, 123, 231)
     if b > 150 and r > 100 and (b - g) > 35 and sat_mean > 40:
         return "standard"
-    # Retired — gray text, low saturation
+    # Retired - gray text, low saturation
     return "retired"
+
+
+def _format_hms(h: str, m: str, s: str) -> Optional[str]:
+    try:
+        hh, mm, ss = int(h), int(m), int(s)
+    except ValueError:
+        return None
+    if 0 <= hh <= 23 and 0 <= mm <= 59 and 0 <= ss <= 59:
+        return f"{hh:02d}:{mm:02d}:{ss:02d}"
+    return None
+
+
+def timestamp_is_strict(text: str) -> bool:
+    """True when OCR already has YYYY-MM-DD HH:MM:SS with both clock colons."""
+    if not text:
+        return False
+    cleaned = text.replace("/", "-").replace(".", "-")
+    return TIMESTAMP_RE.search(cleaned) is not None
 
 
 def clean_timestamp(text: str) -> str:
@@ -86,9 +116,21 @@ def clean_timestamp(text: str) -> str:
     m = TIMESTAMP_RE.search(cleaned)
     if m:
         return f"{m.group(1)} {m.group(2)}"
+
     loose = re.sub(r"[^\d:\-\s]", "", cleaned).strip()
-    m2 = TIMESTAMP_RE.search(loose)
-    return f"{m2.group(1)} {m2.group(2)}" if m2 else ""
+    dm = _DATE_RE.search(loose)
+    if not dm:
+        return ""
+    date = dm.group(1)
+    rest = loose[dm.end() :]
+    for pat in (_TIME_FULL_RE, _TIME_MISS_SEC_RE, _TIME_MISS_MIN_RE, _TIME_DIGITS_RE):
+        tm = pat.search(rest)
+        if not tm:
+            continue
+        clock = _format_hms(*tm.groups())
+        if clock:
+            return f"{date} {clock}"
+    return ""
 
 
 def clean_item_name(text: str, item_type: Optional[str] = None) -> str:
@@ -132,7 +174,7 @@ def clean_source(text: str) -> str:
         if key == known_key or key.startswith(known_key):
             return known
 
-    # Fuzzy Custom Procurement — OCR often mangles "Custom"/"Procurement"
+    # Fuzzy Custom Procurement - OCR often mangles "Custom"/"Procurement"
     # e.g. Custm / Custon / Procurenent, with spaces, hyphens, or underscores.
     if "weapon" in key:
         if key.startswith("cust") or "procur" in key:
@@ -209,16 +251,53 @@ class GachaScanner:
         if cb:
             cb(msg)
 
+    def _dbg(self, msg: str):
+        os.makedirs(os.path.dirname(DEBUG_LOG) or ".", exist_ok=True)
+        line = f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]} {msg}"
+        try:
+            with open(DEBUG_LOG, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError:
+            pass
+        print(f"Gacha {msg}", flush=True)
+
+    def _start_debug_log(self):
+        os.makedirs(os.path.dirname(DEBUG_LOG) or ".", exist_ok=True)
+        with open(DEBUG_LOG, "w", encoding="utf-8") as f:
+            f.write(f"=== gacha scan {datetime.now().isoformat(timespec='seconds')} ===\n")
+
+    @staticmethod
+    def _img_info(img) -> str:
+        if img is None or getattr(img, "size", 0) == 0:
+            return "img=None"
+        mean = float(img.mean()) if hasattr(img, "mean") else -1
+        return f"shape={getattr(img, 'shape', '?')} mean={mean:.1f}"
+
+    def _save_debug_img(self, filename: str, img) -> None:
+        if img is None or getattr(img, "size", 0) == 0:
+            return
+        os.makedirs(DEBUG_CROPS, exist_ok=True)
+        try:
+            Image.fromarray(img).save(os.path.join(DEBUG_CROPS, filename))
+        except Exception as e:
+            self._dbg(f"save crop {filename} failed: {e}")
+
     def read_page_number(self) -> Optional[int]:
         gacha = self.config_manager.get_gacha()
-        img = safe_grab(gacha["page_number"])
+        bbox = gacha["page_number"]
+        img = safe_grab(bbox)
         text = self.ocr.extract_text(
             img,
             is_number=True,
             config=self._ocr_config(),
             allowlist="0123456789",
         )
-        return parse_page_number(text)
+        parsed = parse_page_number(text)
+        self._dbg(
+            f"page_ocr bbox={list(bbox)} raw={text!r} parsed={parsed} "
+            f"{self._img_info(img)}"
+        )
+        return parsed
 
     def click_bbox(self, key: str):
         gacha = self.config_manager.get_gacha()
@@ -248,8 +327,35 @@ class GachaScanner:
         final = self.read_page_number()
         return final == 1 or final is None
 
+    def _ocr_purchase_time(self, bbox, cfg: dict) -> Tuple[str, str, Optional[np.ndarray]]:
+        """OCR a purchase_time cell. Retry up to 3 times if a clock colon is missing."""
+        _, settle = self._delays()
+        img = safe_grab(bbox)
+        raw = self.ocr.extract_text(
+            img, config=cfg, allowlist="0123456789-: "
+        )
+        if timestamp_is_strict(raw):
+            return raw, clean_timestamp(raw), img
+
+        for attempt in range(1, 4):
+            self._dbg(f"  time retry {attempt}/3 raw={raw!r}")
+            time.sleep(settle)
+            img = safe_grab(bbox)
+            raw = self.ocr.extract_text(
+                img, config=cfg, allowlist="0123456789-: "
+            )
+            if timestamp_is_strict(raw):
+                self._dbg(f"  time retry {attempt}/3 recovered {raw!r}")
+                return raw, clean_timestamp(raw), img
+
+        parsed = clean_timestamp(raw)
+        self._dbg(f"  time retry exhausted raw={raw!r} parsed={parsed!r}")
+        return raw, parsed, img
+
     def scan_current_page(
-        self, ordinals: Optional[Dict[Tuple[str, str], int]] = None
+        self,
+        ordinals: Optional[Dict[Tuple[str, str, str], int]] = None,
+        dump_crops_prefix: Optional[str] = None,
     ) -> List[Dict]:
         """OCR all 6 rows on the current Access Records page."""
         if ordinals is None:
@@ -258,31 +364,51 @@ class GachaScanner:
         gacha = self.config_manager.get_gacha()
         cfg = self._ocr_config()
         pulls: List[Dict] = []
+        rows = gacha.get("rows", [])
+        seen = 0
+        self._dbg(f"scan_current_page rows_configured={len(rows)}")
 
-        for row in gacha.get("rows", []):
-            time_img = safe_grab(row["purchase_time"])
+        for i, row in enumerate(rows):
             source_img = safe_grab(row["purchase_source"])
             type_img = safe_grab(row["type"])
             name_img = safe_grab(row["name"])
-
-            raw_time = self.ocr.extract_text(
-                time_img,
-                config=cfg,
-                allowlist="0123456789-: ",
+            raw_time, purchase_time, time_img = self._ocr_purchase_time(
+                row["purchase_time"], cfg
             )
             raw_source = self.ocr.extract_text(source_img, config=cfg)
             raw_type = self.ocr.extract_text(type_img, config=cfg)
             raw_name = self.ocr.extract_text(name_img, config=cfg)
-
-            purchase_time = clean_timestamp(raw_time)
             purchase_source = clean_source(raw_source)
             item_type = clean_type(raw_type)
             item_name = clean_item_name(raw_name, item_type=item_type)
 
+            if raw_time.strip() or raw_name.strip():
+                seen += 1
+
+            self._dbg(
+                f"  row{i} time_raw={raw_time!r} -> {purchase_time!r} "
+                f"{self._img_info(time_img)} | "
+                f"name_raw={raw_name!r} -> {item_name!r} "
+                f"{self._img_info(name_img)} | "
+                f"src={raw_source!r} -> {purchase_source!r} | "
+                f"type={raw_type!r} -> {item_type!r}"
+            )
+
+            if dump_crops_prefix:
+                self._save_debug_img(f"{dump_crops_prefix}_r{i}_time.png", time_img)
+                self._save_debug_img(f"{dump_crops_prefix}_r{i}_name.png", name_img)
+                self._save_debug_img(f"{dump_crops_prefix}_r{i}_src.png", source_img)
+                self._save_debug_img(f"{dump_crops_prefix}_r{i}_type.png", type_img)
+
             if not purchase_time or not item_name:
+                self._dbg(
+                    f"  row{i} SKIP missing "
+                    f"{'time' if not purchase_time else ''}"
+                    f"{' name' if not item_name else ''}"
+                )
                 continue
 
-            key = (purchase_time, item_name)
+            key = (purchase_time, item_name, item_type or "Unknown")
             ordinal = ordinals[key]
             ordinals[key] = ordinal + 1
 
@@ -298,7 +424,85 @@ class GachaScanner:
                 }
             )
 
+        self._last_rows_seen = seen
+        self._dbg(f"scan_current_page kept={len(pulls)}/{len(rows)} seen={seen}")
         return pulls
+
+    def _scan_page_accepted(
+        self,
+        ordinals: Dict[Tuple[str, str, str], int],
+        page: Optional[int],
+        pages_scanned: int,
+        status_cb: STATUS_CB,
+    ) -> Tuple[List[Dict], str]:
+        """OCR the current page; retry up to 3 times if any row fails.
+
+        Failed attempts are discarded (no insert, ordinals unchanged).
+        Returns (pulls, outcome) with outcome 'ok', 'empty', or 'incomplete'.
+        """
+        _, settle = self._delays()
+        last_seen = 0
+
+        for attempt in range(1, 4):
+            working: Dict[Tuple[str, str, str], int] = defaultdict(int, ordinals)
+            dump = None
+            if attempt > 1:
+                dump = f"retry_p{page if page is not None else pages_scanned}_a{attempt}"
+                self._status(
+                    status_cb,
+                    f"Page {page if page is not None else '?'} failed - "
+                    f"dropping rows, retry {attempt}/3...",
+                )
+                self._dbg(
+                    f"discard page {page} attempt {attempt - 1}, rescan {attempt}/3"
+                )
+                time.sleep(settle)
+
+            pulls = self.scan_current_page(working, dump_crops_prefix=dump)
+            seen = int(getattr(self, "_last_rows_seen", 0) or 0)
+            last_seen = seen
+
+            if seen == 0:
+                self._dbg(f"page {page} attempt={attempt} no row text")
+                continue
+
+            if len(pulls) == seen:
+                for key, value in working.items():
+                    ordinals[key] = value
+                self._dbg(
+                    f"page {page} accepted attempt={attempt} kept={len(pulls)}/{seen}"
+                )
+                return pulls, "ok"
+
+            self._dbg(
+                f"page {page} incomplete attempt={attempt} "
+                f"kept={len(pulls)}/{seen} - drop all"
+            )
+
+        if last_seen == 0:
+            return [], "empty"
+        self._dbg(
+            f"page {page} still incomplete after 3 attempts - drop all, do not insert"
+        )
+        return [], "incomplete"
+
+    def _turn_next(
+        self,
+        prev_page: Optional[int],
+        click_delay: float,
+        settle: float,
+    ) -> Tuple[Optional[int], Optional[str]]:
+        self._dbg("click btn_next")
+        self.click_bbox("btn_next")
+        time.sleep(click_delay)
+        time.sleep(settle)
+        new_page = self.read_page_number()
+        self._dbg(f"after next prev={prev_page} new={new_page}")
+        if new_page is not None and prev_page is not None and new_page == prev_page:
+            return new_page, "page_unchanged"
+        if new_page is not None and prev_page is not None and new_page < prev_page:
+            return new_page, "page_did_not_advance"
+        return new_page, None
 
     def scan_all_pages(
         self,
@@ -307,46 +511,105 @@ class GachaScanner:
         max_pages: int = 500,
     ) -> Dict:
         """
-        Reset to page 1, scan each page (newest → oldest), click Next until
-        stuck/empty, or until a full page of pulls is already in the DB
-        (incremental catch-up after the first full history scan).
+        Scan from the current Access Records page toward older pages until
+        stuck/empty, or until a page of pulls is already in the DB.
 
         Returns summary dict with inserted/skipped/pages/pulls/caught_up.
         """
         self._stop = False
         click_delay, settle = self._delays()
-        ordinals: Dict[Tuple[str, str], int] = defaultdict(int)
+        ordinals: Dict[Tuple[str, str, str], int] = defaultdict(int)
         session_pulls: List[Dict] = []
         inserted_total = 0
         skipped_total = 0
         caught_up = False
+        stop_reason = None
+        last_new_page: Optional[int] = None
 
-        self._status(status_cb, "Resetting to page 1…")
-        self.go_to_page_one(status_cb=status_cb)
+        self._start_debug_log()
+        gacha = self.config_manager.get_gacha()
+        self._dbg(
+            f"start click_delay={click_delay:.3f}s settle={settle:.3f}s "
+            f"rows={len(gacha.get('rows') or [])} "
+            f"page_bbox={list(gacha.get('page_number') or [])} "
+            f"next_bbox={list(gacha.get('btn_next') or [])}"
+        )
+
+        # Click the page indicator so the game is focused before OCR,
+        # without turning the page.
+        self._dbg("click page_number (focus)")
+        self.click_bbox("page_number")
+        time.sleep(click_delay)
         time.sleep(settle)
+        self._save_debug_img(
+            "focus_page_number.png", safe_grab(gacha["page_number"])
+        )
+
+        page = self.read_page_number()
+        self._status(
+            status_cb,
+            f"Starting from page {page if page is not None else '?'}...",
+        )
 
         pages_scanned = 0
         prev_page: Optional[int] = None
 
         while pages_scanned < max_pages:
             if self._stop:
+                stop_reason = "user_stop"
+                self._dbg("stop_reason=user_stop")
                 self._status(status_cb, "Scan stopped.")
                 break
 
             page = self.read_page_number()
             self._status(
                 status_cb,
-                f"Scanning page {page if page is not None else pages_scanned + 1}…",
+                f"Scanning page {page if page is not None else pages_scanned + 1}...",
             )
+            self._dbg(f"loop pages_scanned={pages_scanned} page={page}")
 
-            page_pulls = self.scan_current_page(ordinals)
-            if not page_pulls:
-                self._status(status_cb, "Empty page — finished.")
+            page_pulls, outcome = self._scan_page_accepted(
+                ordinals, page, pages_scanned, status_cb
+            )
+            if outcome == "empty":
+                stop_reason = "empty_page"
+                self._dbg("stop_reason=empty_page (no row text after retries)")
+                try:
+                    self._save_debug_img(
+                        f"empty_p{page}_page_number.png",
+                        safe_grab(gacha["page_number"]),
+                    )
+                except Exception:
+                    pass
+                self._status(status_cb, "Empty page - finished.")
                 break
+            if outcome == "incomplete":
+                self._dbg(
+                    f"page {page} dropped after retries, turning page without insert"
+                )
+                pages_scanned += 1
+                prev_page = page
+                if self._stop:
+                    stop_reason = "user_stop"
+                    break
+                new_page, turn_reason = self._turn_next(
+                    prev_page, click_delay, settle
+                )
+                last_new_page = new_page
+                if turn_reason == "page_unchanged":
+                    stop_reason = turn_reason
+                    self._status(status_cb, "Next page unchanged - finished.")
+                    break
+                if turn_reason == "page_did_not_advance":
+                    stop_reason = turn_reason
+                    self._status(status_cb, "Page did not advance - finished.")
+                    break
+                continue
 
             ins, known = self.db.insert_pulls(page_pulls)
             inserted_total += ins
             skipped_total += known
+            self._dbg(f"insert new={ins} known={known}")
             for p in page_pulls:
                 session_pulls.append(p)
                 if on_pull:
@@ -355,45 +618,61 @@ class GachaScanner:
             pages_scanned += 1
             prev_page = page
 
-            # Records are newest→oldest. A 10-pull often spans pages, e.g.
-            # page 1: 6 new, page 2: 4 new + 2 already known. Once we see any
-            # known pull on a page (after saving that page's new ones), every
-            # older page is already in the DB — stop without walking history.
-            if known > 0:
+            # A 10-pull can repeat the same name in one second (ordinal 0, 1, ...).
+            # A doll and a weapon can also share a name at that second. Those are
+            # not "already known". Stop only when this page inserted nothing
+            # because every row was already in the DB.
+            if known > 0 and ins == 0:
                 caught_up = True
+                stop_reason = "caught_up"
+                self._dbg(f"stop_reason=caught_up known={known} new=0")
                 self._status(
                     status_cb,
-                    f"Caught up — hit {known} known pull(s) on this page. "
+                    f"Caught up - all {known} pull(s) on this page already in history. "
                     f"New this run: {inserted_total}.",
                 )
                 break
 
             if self._stop:
+                stop_reason = "user_stop"
                 break
 
-            self.click_bbox("btn_next")
-            time.sleep(click_delay)
-            time.sleep(settle)
-
-            new_page = self.read_page_number()
-            if new_page is not None and prev_page is not None and new_page == prev_page:
-                self._status(status_cb, "Next page unchanged — finished.")
+            new_page, turn_reason = self._turn_next(prev_page, click_delay, settle)
+            last_new_page = new_page
+            if turn_reason == "page_unchanged":
+                stop_reason = turn_reason
+                self._dbg("stop_reason=page_unchanged")
+                self._status(status_cb, "Next page unchanged - finished.")
                 break
-            if new_page is not None and prev_page is not None and new_page < prev_page:
-                self._status(status_cb, "Page did not advance — finished.")
+            if turn_reason == "page_did_not_advance":
+                stop_reason = turn_reason
+                self._dbg("stop_reason=page_did_not_advance")
+                self._status(status_cb, "Page did not advance - finished.")
                 break
 
-        if not caught_up and not self._stop:
+        if stop_reason is None:
+            if pages_scanned >= max_pages:
+                stop_reason = "max_pages"
+            else:
+                stop_reason = "complete"
             self._status(
                 status_cb,
                 f"Done. Pages {pages_scanned}, "
                 f"saved {inserted_total}, known {skipped_total}.",
             )
+        self._dbg(
+            f"end reason={stop_reason} pages={pages_scanned} "
+            f"new={inserted_total} known={skipped_total} "
+            f"last_page={prev_page} after_next={last_new_page}"
+        )
         return {
             "pages": pages_scanned,
             "inserted": inserted_total,
             "skipped": skipped_total,
             "caught_up": caught_up,
             "stopped": self._stop,
+            "stop_reason": stop_reason,
+            "prev_page": prev_page,
+            "new_page": last_new_page,
             "pulls": session_pulls,
         }

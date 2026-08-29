@@ -140,9 +140,9 @@ class GachaCaptureTab(QWidget):
         settings_lay.addLayout(timing_row)
 
         help_label = QLabel(
-            "Open Access Records (any filter/banner). Scanner resets to page 1, "
-            "walks newest to oldest, and stops once it hits pulls already in history "
-            "(mixed pages from 10-pulls are fine). F9 start - F5 stop."
+            "Open Access Records (any filter/banner) on the page you want to start from. "
+            "Scanner walks toward older pages and stops once it hits pulls already in history. "
+            "F9 start - F5 stop."
         )
         help_label.setFont(self.fonts.caption)
         help_label.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
@@ -303,20 +303,43 @@ class GachaCaptureTab(QWidget):
     def _on_scan_complete(self, summary: dict):
         self.is_scanning = False
         self._refresh_stats()
-        if summary.get("caught_up"):
+        reason = summary.get("stop_reason") or ""
+        pages = summary.get("pages", 0)
+        inserted = summary.get("inserted", 0)
+        skipped = summary.get("skipped", 0)
+        prev_page = summary.get("prev_page")
+        new_page = summary.get("new_page")
+        if reason == "caught_up":
             msg = (
-                f"Caught up. Pages {summary['pages']}, "
-                f"new {summary['inserted']}, already known {summary['skipped']}."
+                f"Caught up. Pages {pages}, "
+                f"new {inserted}, already known {skipped}."
             )
-        elif summary.get("stopped"):
+        elif reason == "user_stop" or summary.get("stopped"):
             msg = (
-                f"Stopped. Pages {summary['pages']}, "
-                f"new {summary['inserted']}, known {summary['skipped']}."
+                f"Stopped. Pages {pages}, "
+                f"new {inserted}, known {skipped}."
             )
+        elif reason == "empty_page":
+            msg = (
+                f"Empty page. Scanned {pages}, new {inserted}, known {skipped}. "
+                f"OCR got 0 rows. See data/gacha_scan_debug.log"
+            )
+        elif reason == "page_unchanged":
+            msg = (
+                f"Next page unchanged (OCR {prev_page} -> {new_page}). "
+                f"Pages {pages}, new {inserted}, known {skipped}."
+            )
+        elif reason == "page_did_not_advance":
+            msg = (
+                f"Page did not advance (OCR {prev_page} -> {new_page}). "
+                f"Pages {pages}, new {inserted}, known {skipped}."
+            )
+        elif pages == 0:
+            msg = "No pulls read on this page. OCR returned empty rows."
         else:
             msg = (
-                f"Done. Pages {summary['pages']}, "
-                f"new {summary['inserted']}, known {summary['skipped']}."
+                f"Done. Pages {pages}, "
+                f"new {inserted}, known {skipped}."
             )
         self.status_label.setText(msg)
         if not summary.get("stopped"):

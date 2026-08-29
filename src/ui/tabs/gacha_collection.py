@@ -99,13 +99,22 @@ class _DollListModel(QAbstractListModel):
         if not index.isValid() or not (0 <= index.row() < len(self._names)):
             return None
         name = self._names[index.row()]
+        row = self._rows.get(name, {})
         if role == Qt.ItemDataRole.DisplayRole:
             return name
+        if role == Qt.ItemDataRole.ToolTipRole:
+            scanned = int(row.get("scanned", 0))
+            if scanned <= 0:
+                return None
+            extras = max(0, scanned - MAX_COPIES)
+            if extras > 0:
+                return f"{scanned} elite pulls recorded ({extras} past V6)"
+            return f"{scanned} elite pulls recorded"
         if role == Qt.ItemDataRole.UserRole:
-            row = self._rows.get(name, {})
             return {
                 "name": name,
                 "copies": row.get("copies", 0),
+                "scanned": row.get("scanned", 0),
                 "overridden": row.get("overridden", False),
                 "pixmap_owned": row.get("pixmap_owned"),
                 "pixmap_dim": row.get("pixmap_dim"),
@@ -119,9 +128,10 @@ class _DollListModel(QAbstractListModel):
             self._rows.setdefault(name, {})
         self.endResetModel()
 
-    def update_card(self, name: str, *, copies: int, overridden: bool) -> None:
+    def update_card(self, name: str, *, copies: int, overridden: bool, scanned: int = 0) -> None:
         row = self._rows.setdefault(name, {})
         row["copies"] = copies
+        row["scanned"] = scanned
         row["overridden"] = overridden
         self._notify(name)
 
@@ -137,7 +147,7 @@ class _DollListModel(QAbstractListModel):
         except ValueError:
             return
         idx = self.index(row_idx)
-        self.dataChanged.emit(idx, idx, [Qt.ItemDataRole.UserRole])
+        self.dataChanged.emit(idx, idx, [Qt.ItemDataRole.UserRole, Qt.ItemDataRole.ToolTipRole])
 
 
 class _CardDelegate(QStyledItemDelegate):
@@ -181,6 +191,7 @@ class _CardDelegate(QStyledItemDelegate):
         data = index.data(Qt.ItemDataRole.UserRole) or {}
         name = data.get("name", "")
         copies = int(data.get("copies", 0))
+        scanned = int(data.get("scanned", 0))
         overridden = bool(data.get("overridden", False))
         owned = copies > 0
 
@@ -206,6 +217,9 @@ class _CardDelegate(QStyledItemDelegate):
         )
 
         rank_text = f"V{copies - 1}" if copies > 0 else "-"
+        # Pull count from Access Records; hide in edit mode so +/- still fit.
+        if scanned > 0 and not self.edit_mode:
+            rank_text = f"{rank_text} ({scanned})"
         painter.setFont(self._fonts.body_medium)
         painter.setPen(QColor(THEME["accent_amber"] if overridden else THEME["text_primary"]))
         painter.drawText(rank_rect, int(Qt.AlignmentFlag.AlignCenter), rank_text)
@@ -308,6 +322,7 @@ class GachaCollectionTab(QWidget):
         toolbar_row.addWidget(title)
 
         desc = QLabel("Elite doll copies from scans (max V6). Edit to correct ranks outside Access Records.")
+        desc.setToolTip("V-rank uses copies up to V6. The number in parentheses is total elite pulls in the database.")
         desc.setFont(self.fonts.body)
         desc.setStyleSheet(f"color: {THEME['text_muted']}; background: transparent;")
         toolbar_row.addWidget(desc)
@@ -406,7 +421,8 @@ class GachaCollectionTab(QWidget):
     def _paint_all(self) -> None:
         for name in self._doll_order:
             copies, overridden = self._effective_copies(name, "Doll")
-            self.model.update_card(name, copies=copies, overridden=overridden)
+            scanned = int(self._scanned.get((name, "Doll"), 0))
+            self.model.update_card(name, copies=copies, overridden=overridden, scanned=scanned)
 
     def refresh(self) -> None:
         """Rebuild gallery once; later updates paint in place."""
@@ -444,7 +460,9 @@ class GachaCollectionTab(QWidget):
             self.db.set_collection_override(name, item_type, new)
             self._overrides[key] = new
         copies2, overridden2 = self._effective_copies(name, item_type)
-        self.model.update_card(name, copies=copies2, overridden=overridden2)
+        self.model.update_card(
+            name, copies=copies2, overridden=overridden2, scanned=scanned
+        )
         self._schedule_notify()
 
     def _schedule_notify(self) -> None:

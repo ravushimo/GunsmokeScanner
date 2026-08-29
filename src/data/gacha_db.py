@@ -43,7 +43,7 @@ class GachaDB:
                     ordinal INTEGER NOT NULL DEFAULT 0,
                     rarity_color TEXT,
                     scanned_at TEXT NOT NULL,
-                    UNIQUE (purchase_time, item_name, ordinal)
+                    UNIQUE (purchase_time, item_name, item_type, ordinal)
                 )
                 """
             )
@@ -62,6 +62,48 @@ class GachaDB:
                     PRIMARY KEY (item_name, item_type)
                 )
                 """
+            )
+            self._migrate_unique_include_type(conn)
+
+    def _migrate_unique_include_type(self, conn: sqlite3.Connection) -> None:
+        """Doll and weapon can share a name at the same second (e.g. OTs-14)."""
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='pulls'"
+        ).fetchone()
+        sql = " ".join((row[0] or "").split()) if row else ""
+        if "UNIQUE (purchase_time, item_name, item_type, ordinal)" in sql:
+            return
+        conn.executescript(
+            """
+            CREATE TABLE pulls_mig (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                purchase_time TEXT NOT NULL,
+                purchase_source TEXT NOT NULL,
+                item_type TEXT NOT NULL,
+                item_name TEXT NOT NULL,
+                ordinal INTEGER NOT NULL DEFAULT 0,
+                rarity_color TEXT,
+                scanned_at TEXT NOT NULL,
+                UNIQUE (purchase_time, item_name, item_type, ordinal)
+            );
+            INSERT INTO pulls_mig (
+                id, purchase_time, purchase_source, item_type, item_name,
+                ordinal, rarity_color, scanned_at
+            )
+            SELECT id, purchase_time, purchase_source, item_type, item_name,
+                   ordinal, rarity_color, scanned_at
+            FROM pulls;
+            DROP TABLE pulls;
+            ALTER TABLE pulls_mig RENAME TO pulls;
+            CREATE INDEX IF NOT EXISTS idx_pulls_time ON pulls(purchase_time DESC);
+            CREATE INDEX IF NOT EXISTS idx_pulls_source ON pulls(purchase_source);
+            """
+        )
+        max_id = conn.execute("SELECT MAX(id) FROM pulls").fetchone()[0]
+        if max_id:
+            conn.execute(
+                "INSERT OR REPLACE INTO sqlite_sequence(name, seq) VALUES ('pulls', ?)",
+                (int(max_id),),
             )
 
     def insert_pull(
@@ -102,14 +144,24 @@ class GachaDB:
         purchase_time: str,
         item_name: str,
         ordinal: int,
+        item_type: Optional[str] = None,
         conn: Optional[sqlite3.Connection] = None,
     ) -> bool:
-        sql = """
-            SELECT 1 FROM pulls
-            WHERE purchase_time = ? AND item_name = ? AND ordinal = ?
-            LIMIT 1
-        """
-        params = (purchase_time, item_name, ordinal)
+        if item_type:
+            sql = """
+                SELECT 1 FROM pulls
+                WHERE purchase_time = ? AND item_name = ? AND item_type = ?
+                  AND ordinal = ?
+                LIMIT 1
+            """
+            params = (purchase_time, item_name, item_type, ordinal)
+        else:
+            sql = """
+                SELECT 1 FROM pulls
+                WHERE purchase_time = ? AND item_name = ? AND ordinal = ?
+                LIMIT 1
+            """
+            params = (purchase_time, item_name, ordinal)
         if conn is not None:
             return conn.execute(sql, params).fetchone() is not None
         with self._connect() as c:
@@ -118,8 +170,10 @@ class GachaDB:
     def insert_pulls(self, pulls: Iterable[Dict[str, Any]]) -> Tuple[int, int]:
         """Bulk insert. Returns (inserted_new, already_known).
 
-        Existing rows (same time, name, ordinal) are updated in place and
-        counted as already_known so the scanner can stop when catching up.
+        Duplicate means same time, name, type, and copy index (ordinal).
+        Two copies in one 10-pull (same name) get ordinal 0 and 1.
+        A doll and a weapon that share a name at the same second are not
+        duplicates.
         """
         inserted = 0
         known = 0
@@ -128,24 +182,27 @@ class GachaDB:
             for p in pulls:
                 time_s = p["purchase_time"]
                 name = p["item_name"]
+                item_type = p.get("item_type") or "Unknown"
                 ordinal = int(p.get("ordinal", 0))
-                existed = self.pull_exists(time_s, name, ordinal, conn=conn)
+                existed = self.pull_exists(
+                    time_s, name, ordinal, item_type=item_type, conn=conn
+                )
                 conn.execute(
                     """
                     INSERT INTO pulls (
                         purchase_time, purchase_source, item_type, item_name,
                         ordinal, rarity_color, scanned_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(purchase_time, item_name, ordinal) DO UPDATE SET
+                    ON CONFLICT(purchase_time, item_name, item_type, ordinal)
+                    DO UPDATE SET
                         purchase_source = excluded.purchase_source,
-                        item_type = excluded.item_type,
                         rarity_color = excluded.rarity_color,
                         scanned_at = excluded.scanned_at
                     """,
                     (
                         time_s,
                         p["purchase_source"],
-                        p["item_type"],
+                        item_type,
                         name,
                         ordinal,
                         p.get("rarity_color"),
@@ -311,13 +368,14 @@ class GachaDB:
         with self._connect() as conn:
             if item_type:
                 conflict_sql = """
-                    SELECT p.id, p.purchase_time, p.ordinal
+                    SELECT p.id, p.purchase_time, p.ordinal, p.item_type
                     FROM pulls p
                     WHERE p.item_name = ? AND p.item_type = ?
                       AND EXISTS (
                         SELECT 1 FROM pulls q
                         WHERE q.purchase_time = p.purchase_time
                           AND q.item_name = ?
+                          AND q.item_type = p.item_type
                           AND q.ordinal = p.ordinal
                           AND q.id != p.id
                       )
@@ -325,13 +383,14 @@ class GachaDB:
                 conflict_params = (old_name, item_type, new_name)
             else:
                 conflict_sql = """
-                    SELECT p.id, p.purchase_time, p.ordinal
+                    SELECT p.id, p.purchase_time, p.ordinal, p.item_type
                     FROM pulls p
                     WHERE p.item_name = ?
                       AND EXISTS (
                         SELECT 1 FROM pulls q
                         WHERE q.purchase_time = p.purchase_time
                           AND q.item_name = ?
+                          AND q.item_type = p.item_type
                           AND q.ordinal = p.ordinal
                           AND q.id != p.id
                       )
@@ -339,17 +398,18 @@ class GachaDB:
                 conflict_params = (old_name, new_name)
 
             conflicts = conn.execute(conflict_sql, conflict_params).fetchall()
-            for row_id, purchase_time, ordinal in conflicts:
+            for row_id, purchase_time, ordinal, row_type in conflicts:
                 new_ord = int(ordinal)
                 while True:
                     new_ord += 1
                     exists = conn.execute(
                         """
                         SELECT 1 FROM pulls
-                        WHERE purchase_time = ? AND item_name = ? AND ordinal = ?
+                        WHERE purchase_time = ? AND item_name = ?
+                          AND item_type = ? AND ordinal = ?
                         LIMIT 1
                         """,
-                        (purchase_time, new_name, new_ord),
+                        (purchase_time, new_name, row_type, new_ord),
                     ).fetchone()
                     if not exists:
                         break

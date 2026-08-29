@@ -234,6 +234,24 @@ class OCRProcessor:
 
         return processed
 
+    def _readtext(
+        self,
+        img: np.ndarray,
+        is_number: bool = False,
+        allowlist: str = None,
+    ) -> str:
+        if img is None or getattr(img, "size", 0) == 0:
+            return ""
+        if allowlist is not None:
+            result = self.reader.readtext(img, detail=0, allowlist=allowlist)
+        elif is_number:
+            result = self.reader.readtext(
+                img, detail=0, allowlist="0123456789,"
+            )
+        else:
+            result = self.reader.readtext(img, detail=0, paragraph=False)
+        return "".join(result).strip() if result else ""
+
     def extract_text(
         self,
         img: np.ndarray,
@@ -255,34 +273,17 @@ class OCRProcessor:
                 return ""
 
             processed = self.preprocess_image(img, config)
-            if processed is None:
-                return ""
+            text = self._readtext(processed, is_number=is_number, allowlist=allowlist)
 
-            if allowlist is not None:
-                result = self.reader.readtext(
-                    processed, detail=0, allowlist=allowlist
-                )
-            elif is_number:
-                result = self.reader.readtext(
-                    processed, detail=0, allowlist="0123456789,"
-                )
-            else:
-                result = self.reader.readtext(processed, detail=0, paragraph=False)
-
-            text = "".join(result)
-
-            # Double check for numbers if empty
-            if is_number and not text.strip() and allowlist is None:
-                retry_config = config.copy() if config else {}
-                if "preprocessing" not in retry_config:
-                    retry_config["preprocessing"] = {}
-                retry_config["preprocessing"]["adaptive"] = False
-
-                processed_retry = self.preprocess_image(img, retry_config)
-                result = self.reader.readtext(
-                    processed_retry, detail=0, allowlist="0123456789,"
-                )
-                text = "".join(result)
+            # Adaptive threshold often wipes low-contrast UI text (retired/gray names).
+            if not text:
+                text = self._readtext(img, is_number=is_number, allowlist=allowlist)
+            if not text:
+                gray = img[:, :, :3] if img.ndim == 3 else img
+                if gray.ndim == 3:
+                    gray = cv2.cvtColor(gray, cv2.COLOR_RGB2GRAY)
+                _, hi = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+                text = self._readtext(hi, is_number=is_number, allowlist=allowlist)
 
             return text.strip()
         except Exception as e:
