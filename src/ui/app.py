@@ -342,6 +342,9 @@ class GunsmokeApp:
         threading.Thread(target=work, daemon=True).start()
 
     def _on_f9(self):
+        call_soon(self._f9_on_gui)
+
+    def _f9_on_gui(self):
         if self._mode == "inventory":
             self.inventory_capture_tab.start_full_scan()
         elif self._mode == "gacha" and self._tab_id == "capture":
@@ -350,10 +353,16 @@ class GunsmokeApp:
             self.capture_tab.start_capture_thread()
 
     def _on_f8(self):
+        call_soon(self._f8_on_gui)
+
+    def _f8_on_gui(self):
         if self._mode == "inventory":
             self.inventory_capture_tab.start_single()
 
     def _on_f7(self):
+        call_soon(self._f7_on_gui)
+
+    def _f7_on_gui(self):
         if self._mode == "inventory":
             self.inventory_capture_tab.start_last_row()
 
@@ -363,6 +372,9 @@ class GunsmokeApp:
         call_soon(lambda on=nxt: self.set_overlay_visible(on))
 
     def _on_f5(self):
+        call_soon(self._f5_on_gui)
+
+    def _f5_on_gui(self):
         if self._mode == "gacha":
             self.gacha_capture_tab.stop_scan()
         elif self._mode == "inventory":

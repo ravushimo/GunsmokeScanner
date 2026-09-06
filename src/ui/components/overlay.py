@@ -10,7 +10,7 @@ converts at the boundary so overlays and OCR stay aligned under DPI scaling.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import QEvent, QObject, QThread, Qt
 from PySide6.QtGui import QCursor, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -239,13 +239,18 @@ class OverlayManager:
         for overlay in self.overlay_windows:
             if overlay:
                 try:
-                    overlay.close()
+                    overlay.hide()
+                    overlay.deleteLater()
                 except Exception:
                     pass
         self.overlay_windows = []
         self.active = False
         self.dragging = False
         self.resize_edge = None
+        # Flush hide so a following ImageGrab does not still see tinted regions.
+        app = QApplication.instance()
+        if app is not None and QThread.currentThread() == app.thread():
+            app.processEvents()
 
     def _table_columns(self):
         if self.profile == "gacha":
