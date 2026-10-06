@@ -1,0 +1,470 @@
+{
+  "version": 1,
+  "description": "Dandegate event banners (rate-up schedules). Not Access Records Purchase Source strings - those live in banners.json.",
+  "source": "https://dandegate.net via https://api.dandegate.net/api/banners",
+  "updated_at": "2026-10-06T22:48:09Z",
+  "banners": [
+    {
+      "name": "Chiral Redundancy Part 2",
+      "status": "current",
+      "startDate": "2026-09-17T13:00:00.000Z",
+      "endDate": "2026-10-07T22:59:00.000Z",
+      "dolls": [
+        "Soppo",
+        "Alva",
+        "Loreley"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Chiral Redundancy Part 1",
+      "status": "past",
+      "startDate": "2026-08-27T13:00:00.000Z",
+      "endDate": "2026-09-16T22:59:00.000Z",
+      "dolls": [
+        "OTs-14",
+        "Basti",
+        "Voymastina"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Moonshroud Requiem",
+      "status": "past",
+      "startDate": "2026-08-06T13:00:00.000Z",
+      "endDate": "2026-08-26T22:59:00.000Z",
+      "dolls": [
+        "Sextans",
+        "Phaetusa",
+        "Ullrid"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Dawnforger Part 2",
+      "status": "past",
+      "startDate": "2026-07-16T13:00:00.000Z",
+      "endDate": "2026-08-05T22:59:00.000Z",
+      "dolls": [
+        "Cheyanne",
+        "Liushih",
+        "Helen",
+        "Yoohee"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Dawnforger Part 1",
+      "status": "past",
+      "startDate": "2026-06-25T13:00:00.000Z",
+      "endDate": "2026-07-15T22:59:00.000Z",
+      "dolls": [
+        "Loreley",
+        "Lainie",
+        "Lewis"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Needy Catgirl Overload",
+      "status": "past",
+      "startDate": "2026-06-04T13:00:00.000Z",
+      "endDate": "2026-06-24T22:59:00.000Z",
+      "dolls": [
+        "Basti",
+        "Voymastina",
+        "Lind"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Antiparallel Part 2",
+      "status": "past",
+      "startDate": "2026-05-14T13:00:00.000Z",
+      "endDate": "2026-06-03T22:59:00.000Z",
+      "dolls": [
+        "Phaetusa",
+        "Alva",
+        "Dushevnaya"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Antiparallel Part 1",
+      "status": "past",
+      "startDate": "2026-04-23T13:00:00.000Z",
+      "endDate": "2026-05-13T22:59:00.000Z",
+      "dolls": [
+        "Helen",
+        "Leva",
+        "Sakura"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Breaking Butterfly",
+      "status": "past",
+      "startDate": "2026-04-02T13:00:00.000Z",
+      "endDate": "2026-04-22T22:59:00.000Z",
+      "dolls": [
+        "Lainie",
+        "Klukai",
+        "Lewis"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Corposant Part 2",
+      "status": "past",
+      "startDate": "2026-03-12T13:00:00.000Z",
+      "endDate": "2026-04-01T22:59:00.000Z",
+      "dolls": [
+        "Voymastina",
+        "Robella",
+        "Makiatto"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Corposant Part 1",
+      "status": "past",
+      "startDate": "2026-02-19T14:00:00.000Z",
+      "endDate": "2026-03-11T22:59:00.000Z",
+      "dolls": [
+        "Alva",
+        "Leva",
+        "Lenna"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Advance! Miss Courier!",
+      "status": "past",
+      "startDate": "2026-01-29T13:00:00.000Z",
+      "endDate": "2026-02-18T22:59:00.000Z",
+      "dolls": [
+        "Sakura",
+        "Lind",
+        "Vector"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Project Neural Convergence",
+      "status": "past",
+      "startDate": "2026-01-08T13:00:00.000Z",
+      "endDate": "2026-01-28T22:59:00.000Z",
+      "dolls": [
+        "Lewis",
+        "Florence",
+        "Peri"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Deep Oblivion Part 2",
+      "status": "past",
+      "startDate": "2025-12-18T13:00:00.000Z",
+      "endDate": "2026-01-07T22:59:00.000Z",
+      "dolls": [
+        "Robella",
+        "Belka",
+        "Jiangyu"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Custom Procurement",
+      "status": "past",
+      "startDate": "2025-11-27T13:00:00.000Z",
+      "endDate": "2026-01-07T22:59:00.000Z",
+      "dolls": [
+        "Suomi",
+        "Makiatto",
+        "Centaureissi",
+        "Klukai",
+        "Springfield",
+        "Qiuhua"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Deep Oblivion Part 1",
+      "status": "past",
+      "startDate": "2025-11-27T13:00:00.000Z",
+      "endDate": "2025-12-17T22:59:00.000Z",
+      "dolls": [
+        "Leva",
+        "Lenna",
+        "Andoris",
+        "Mechty"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Turbulent Undercurrents",
+      "status": "past",
+      "startDate": "2025-11-06T13:00:00.000Z",
+      "endDate": "2025-11-26T22:59:00.000Z",
+      "dolls": [
+        "Lind",
+        "Nikketa"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Thriller Wonderland",
+      "status": "past",
+      "startDate": "2025-10-16T12:00:00.000Z",
+      "endDate": "2025-11-05T22:59:00.000Z",
+      "dolls": [
+        "Florence",
+        "Qiuhua"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Interstice of Reminiscence Part 2",
+      "status": "past",
+      "startDate": "2025-09-25T12:00:00.000Z",
+      "endDate": "2025-10-15T21:59:00.000Z",
+      "dolls": [
+        "Jiangyu",
+        "Springfield"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Interstice of Reminiscence Part 1",
+      "status": "past",
+      "startDate": "2025-09-04T12:00:00.000Z",
+      "endDate": "2025-09-24T21:59:00.000Z",
+      "dolls": [
+        "Belka",
+        "Andoris",
+        "Zhaohui"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Ex Umbra",
+      "status": "past",
+      "startDate": "2025-08-14T12:00:00.000Z",
+      "endDate": "2025-09-03T21:59:00.000Z",
+      "dolls": [
+        "Nikketa",
+        "Yoohee"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Life Rekindled",
+      "status": "past",
+      "startDate": "2025-07-24T12:00:00.000Z",
+      "endDate": "2025-08-13T21:59:00.000Z",
+      "dolls": [
+        "Qiuhua",
+        "Vector"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Custom Procurement",
+      "status": "past",
+      "startDate": "2025-07-03T12:00:00.000Z",
+      "endDate": "2025-08-13T21:59:00.000Z",
+      "dolls": [
+        "Suomi",
+        "Ullrid",
+        "Makiatto",
+        "Daiyan"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Mímisbrunnr's Loop",
+      "status": "past",
+      "startDate": "2025-07-03T12:00:00.000Z",
+      "endDate": "2025-07-23T21:59:00.000Z",
+      "dolls": [
+        "Springfield",
+        "Peri",
+        "Mechty"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Echo of Dawn",
+      "status": "past",
+      "startDate": "2025-06-12T12:00:00.000Z",
+      "endDate": "2025-07-02T21:59:00.000Z",
+      "dolls": [
+        "Zhaohui",
+        "Klukai"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Neural Migration - Silvered Whispers",
+      "status": "past",
+      "startDate": "2025-05-22T12:00:00.000Z",
+      "endDate": "2025-06-11T21:59:00.000Z",
+      "dolls": [
+        "Yoohee",
+        "Centaureissi"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Escape From Cyborg",
+      "status": "past",
+      "startDate": "2025-05-01T12:00:00.000Z",
+      "endDate": "2025-05-21T21:59:00.000Z",
+      "dolls": [
+        "Vector",
+        "Dushevnaya"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Aphelion Part 2",
+      "status": "past",
+      "startDate": "2025-04-10T12:00:00.000Z",
+      "endDate": "2025-04-30T21:59:00.000Z",
+      "dolls": [
+        "Mechty",
+        "Daiyan"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Aphelion Part 1",
+      "status": "past",
+      "startDate": "2025-03-20T12:00:00.000Z",
+      "endDate": "2025-04-09T21:59:00.000Z",
+      "dolls": [
+        "Klukai",
+        "Makiatto"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Zucchero Café",
+      "status": "past",
+      "startDate": "2025-02-27T13:00:00.000Z",
+      "endDate": "2025-03-19T21:59:00.000Z",
+      "dolls": [
+        "Centaureissi",
+        "Ullrid"
+      ],
+      "weapons": []
+    },
+    {
+      "name": " Halting Station",
+      "status": "past",
+      "startDate": "2025-02-06T13:00:00.000Z",
+      "endDate": "2025-02-26T22:59:00.000Z",
+      "dolls": [
+        "Dushevnaya",
+        "Suomi"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Amidst Wings of Gray",
+      "status": "past",
+      "startDate": "2025-01-16T16:00:00.000Z",
+      "endDate": "2025-02-05T22:59:00.000Z",
+      "dolls": [
+        "Daiyan",
+        "Mosin-Nagant"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Rhapsody Quartet",
+      "status": "past",
+      "startDate": "2024-12-26T16:00:00.000Z",
+      "endDate": "2025-01-15T22:59:00.000Z",
+      "dolls": [
+        "Makiatto",
+        "Tololo"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Sojourners of the Glass Island",
+      "status": "past",
+      "startDate": "2024-12-03T12:00:00.000Z",
+      "endDate": "2024-12-25T22:59:00.000Z",
+      "dolls": [
+        "Suomi",
+        "Ullrid"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Reunion Procurement",
+      "status": "current",
+      "startDate": "2026-08-27T13:00:00.000Z",
+      "endDate": "2026-10-07T22:59:00.000Z",
+      "dolls": [
+        "Suomi",
+        "Ullrid",
+        "Makiatto",
+        "Daiyan",
+        "Dushevnaya",
+        "Centaureissi",
+        "Klukai",
+        "Mechty",
+        "Vector",
+        "Yoohee",
+        "Zhaohui",
+        "Springfield",
+        "Peri",
+        "Qiuhua",
+        "Nikketa",
+        "Belka",
+        "Andoris",
+        "Jiangyu",
+        "Florence",
+        "Lind",
+        "Leva",
+        "Lenna",
+        "Robella"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Custom Procurement",
+      "status": "past",
+      "startDate": "2026-06-25T13:00:00.000Z",
+      "endDate": "2026-08-05T22:59:00.000Z",
+      "dolls": [
+        "Vector",
+        "Springfield",
+        "Makiatto",
+        "Florence",
+        "Qiuhua",
+        "Klukai",
+        "Belka"
+      ],
+      "weapons": []
+    },
+    {
+      "name": "Custom Procurement",
+      "status": "past",
+      "startDate": "2026-02-19T14:00:00.000Z",
+      "endDate": "2026-04-01T22:59:00.000Z",
+      "dolls": [
+        "Ullrid",
+        "Nikketa",
+        "Daiyan",
+        "Yoohee",
+        "Dushevnaya",
+        "Zhaohui"
+      ],
+      "weapons": []
+    }
+  ]
+}

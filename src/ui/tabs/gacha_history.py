@@ -22,19 +22,14 @@ from PySide6.QtWidgets import (
 )
 
 from src.constants import THEME
-from src.core.gacha_stats import ELITE_HARD_PITY, build_history
+from src.core.gacha_catalog import banner_labels, pity_summary_keys
+from src.core.gacha_stats import BANNER_LABELS, ELITE_HARD_PITY, build_history
 from src.data.gacha_db import GachaDB
 from src.ui.components.date_picker import DatePickerField
 from src.ui.styles import configure_stretch_table, create_button, section_frame, stat_strip
 
 
-BANNER_ORDER = (
-    "Premium Doll",
-    "Premium Weapon",
-    "Custom Dolls",
-    "Custom Weapons",
-    "Standard",
-)
+BANNER_ORDER = tuple(banner_labels().values())
 
 # (label, width, alignment)
 _COLUMNS = (
@@ -202,27 +197,13 @@ class GachaHistoryTab(QWidget):
         # Prefer selected-source current pity when only one banner is in scope
         if len(by_src) == 1:
             src, cur = next(iter(by_src.items()))
-            label = {
-                "Targeted Procurement": "Premium Doll",
-                "Military Upgrade": "Premium Weapon",
-                "Custom Procurement - Dolls": "Custom Dolls",
-                "Custom Procurement - Weapons": "Custom Weapons",
-                "Standard Procurement": "Standard",
-            }.get(src, src)
+            label = BANNER_LABELS.get(src, src)
             pity_txt = f"Current pity - {label} {cur}/{hard}"
         else:
-            doll_p = summary.get("pity_doll", 0)
-            weap_p = summary.get("pity_weapon", 0)
-            cd = summary.get("pity_custom_doll", 0)
-            cw = summary.get("pity_custom_weapon", 0)
-            st = summary.get("pity_standard", 0)
-            pity_txt = (
-                f"Current pity - Premium Doll {doll_p}/{hard}  \u00b7  "
-                f"Premium Weapon {weap_p}/{hard}  \u00b7  "
-                f"Custom Dolls {cd}/{hard}  \u00b7  "
-                f"Custom Weapons {cw}/{hard}  \u00b7  "
-                f"Standard {st}/{hard}"
-            )
+            parts = []
+            for label, key, _source in pity_summary_keys():
+                parts.append(f"{label} {summary.get(key, 0)}/{hard}")
+            pity_txt = "Current pity - " + "  \u00b7  ".join(parts)
         self.stats_pity.setText(pity_txt + avg_txt)
 
     def fix_names(self) -> None:

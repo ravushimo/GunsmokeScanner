@@ -2,90 +2,23 @@
 
 Dolls and weapons can share stems (Lewis vs Lewis Gun, OTs-14 doll vs
 OTs-14 weapon). Always pass item_type so catalogs never cross-match.
+
+Name lists live in assets/gacha/dolls.json and assets/gacha/weapons.json.
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-# --- Standard (purple) dolls that appear on Access Records ---
-STANDARD_DOLLS: Tuple[str, ...] = (
-    "Ksenia",
-    "Littara",
-    "Colphne",
-    "Krolik",
-    "Nemesis",
-    "Cheeta",
-    "Sharkry",
-    "Nagant",
-    "Groza",
-)
-
-# --- Standard (purple) weapons ---
-STANDARD_WEAPONS: Tuple[str, ...] = (
-    "Stechkin",
-    "Model ARM",
-    ".380 Curva",
-    "Hare",
-    ".50 Nemesis",
-    "MP7H1",
-    "Robinson Modular Rifle",
-    "Nagant M1895",
-    "OTs-14",
-    "Vepr-12",
-    "Pecheneg-SP",
-    "Model Alpha",
-    "Model 100",
-    "QBZ-191",
-    "Sportivo Calibro 12",
-    "Three-Line Rifle M1891",
-    "CZ75",
-    "TMP",
-    "UMP40",
-    "UMP45",
-)
-
-RETIRED_WEAPONS: Tuple[str, ...] = tuple(f"Retired {w}" for w in STANDARD_WEAPONS)
-
-# Permanent Elite (gold) pool — keep in sync with gacha_pool keys, display form
-STANDARD_ELITE_DOLL_NAMES: Tuple[str, ...] = (
-    "Vepley",
-    "Peritya",
-    "Tololo",
-    "Qiongjiu",
-    "Sabrina",
-    "Mosin-Nagant",
-    "Faye",
-    "Harpsy",
-)
-
-STANDARD_ELITE_WEAPON_NAMES: Tuple[str, ...] = (
-    "Heart Seeker",
-    "Optical Illusion",
-    "Planeta",
-    "Golden Melody",
-    "Mezzaluna",
-    "Samosek",
-    "Hestia",
-    "Antimony",
-)
-
-# Premium / unique weapons whose names collide with doll stems if matched globally.
-# Extend as new shared-name weapons appear (Lewis Gun, future signature arms, …).
-NAMED_WEAPONS: Tuple[str, ...] = (
-    "Lewis Gun",
-)
-
-RETIRED_NAMED_WEAPONS: Tuple[str, ...] = tuple(
-    f"Retired {w}" for w in NAMED_WEAPONS
-)
+from src.core.gacha_catalog import load_dolls, load_weapons
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
-# Letter-only OCR confusables. Do NOT map digits (0↔o, 1↔i) — that collapses
+# Letter-only OCR confusables. Do NOT map digits (0↔o, 1↔i) - that collapses
 # Model 100 / UMP40 into Model Alpha / TMP-like keys.
 _OCR_CONFUSABLES = str.maketrans(
     {
@@ -97,17 +30,27 @@ _OCR_CONFUSABLES = str.maketrans(
     }
 )
 
+_dolls = load_dolls()
+_weapons = load_weapons()
+
+# Back-compat exports (tests / older imports)
+STANDARD_DOLLS: Tuple[str, ...] = _dolls["standard"]
+STANDARD_ELITE_DOLL_NAMES: Tuple[str, ...] = _dolls["standard_elite"]
+STANDARD_WEAPONS: Tuple[str, ...] = _weapons["standard"]
+STANDARD_ELITE_WEAPON_NAMES: Tuple[str, ...] = _weapons["standard_elite"]
+NAMED_WEAPONS: Tuple[str, ...] = _weapons["named"]
+RETIRED_WEAPONS: Tuple[str, ...] = tuple(f"Retired {w}" for w in STANDARD_WEAPONS)
+RETIRED_NAMED_WEAPONS: Tuple[str, ...] = tuple(f"Retired {w}" for w in NAMED_WEAPONS)
+
 
 def _assets_dolls_dir() -> Path:
-    import sys
-
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS) / "assets" / "dolls"
     return Path(__file__).resolve().parents[2] / "assets" / "dolls"
 
 
 def doll_portrait_names() -> Tuple[str, ...]:
-    """Display names from assets/dolls/*.webp (underscore → space)."""
+    """Display names from assets/dolls/*.webp (underscore -> space)."""
     root = _assets_dolls_dir()
     if not root.is_dir():
         return ()
@@ -148,19 +91,24 @@ def canonical_names_for_type(item_type: str) -> Tuple[str, ...]:
     kind = _normalize_item_type(item_type)
     seen = set()
     out: List[str] = []
+    dolls = load_dolls()
+    weapons = load_weapons()
 
     if kind == "Weapons":
         groups: Sequence[Sequence[str]] = (
-            RETIRED_NAMED_WEAPONS,
-            RETIRED_WEAPONS,
-            NAMED_WEAPONS,
-            STANDARD_WEAPONS,
-            STANDARD_ELITE_WEAPON_NAMES,
+            weapons.get("retired") or (),
+            tuple(f"Retired {w}" for w in weapons["named"]),
+            tuple(f"Retired {w}" for w in weapons["standard"]),
+            weapons["named"],
+            weapons.get("elite") or (),
+            weapons["standard"],
+            weapons["standard_elite"],
         )
     elif kind == "Doll":
         groups = (
-            STANDARD_ELITE_DOLL_NAMES,
-            STANDARD_DOLLS,
+            dolls.get("elite") or (),
+            dolls["standard_elite"],
+            dolls["standard"],
             doll_portrait_names(),
         )
     else:
@@ -176,7 +124,7 @@ def canonical_names_for_type(item_type: str) -> Tuple[str, ...]:
 
 @lru_cache(maxsize=1)
 def all_canonical_names() -> Tuple[str, ...]:
-    """Union of doll + weapon catalogs (tests / tooling only — prefer typed API)."""
+    """Union of doll + weapon catalogs (tests / tooling only - prefer typed API)."""
     seen = set()
     out: List[str] = []
     for n in canonical_names_for_type("Doll") + canonical_names_for_type("Weapons"):
@@ -206,7 +154,7 @@ def _similarity(a: str, b: str) -> float:
                 return max(0.82, coverage)
             return coverage * 0.9
     ratio = SequenceMatcher(None, a, b).ratio()
-    # Penalize large length gaps so Model 100 ≉ Model Alpha, UMP40 ≉ TMP
+    # Penalize large length gaps so Model 100 ≠ Model Alpha, UMP40 ≠ TMP
     len_pen = min(len(a), len(b)) / max(len(a), len(b))
     return ratio * (0.55 + 0.45 * len_pen)
 
@@ -228,8 +176,6 @@ def resolve_item_name(
     else:
         kind = _normalize_item_type(item_type)
         if not kind:
-            # Without a type, refuse fuzzy cross-catalog matches — only exact
-            # case-insensitive hit against the union.
             lower_map = {n.lower(): n for n in all_canonical_names()}
             return lower_map.get(text.lower(), text)
         catalog = canonical_names_for_type(kind)

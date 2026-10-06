@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "description": "Canonical Access Records Purchase Source strings, UI labels, pity pools, and OCR match hints.",
+  "banners": [
+    {
+      "source": "Targeted Procurement",
+      "label": "Premium Doll",
+      "pity": "doll",
+      "fifty_fifty": true,
+      "match": ["targeted", "target"]
+    },
+    {
+      "source": "Military Upgrade",
+      "label": "Premium Weapon",
+      "pity": "weapon",
+      "fifty_fifty": true,
+      "match": ["military", "upgrade"]
+    },
+    {
+      "source": "Custom Procurement - Dolls",
+      "label": "Custom Dolls",
+      "pity": "doll",
+      "fifty_fifty": false,
+      "match": ["customprocurementdoll", "custprocur"]
+    },
+    {
+      "source": "Custom Procurement - Weapons",
+      "label": "Custom Weapons",
+      "pity": "weapon",
+      "fifty_fifty": false,
+      "match": ["customprocurementweapon", "custweapon"]
+    },
+    {
+      "source": "Reunion Procurement - Doll",
+      "label": "Reunion Doll",
+      "pity": "doll",
+      "fifty_fifty": false,
+      "match": ["reunionprocurementdoll", "reuniondoll"]
+    },
+    {
+      "source": "Reunion Procurement - Weapon",
+      "label": "Reunion Weapon",
+      "pity": "weapon",
+      "fifty_fifty": false,
+      "match": ["reunionprocurementweapon", "reunionweapon"]
+    },
+    {
+      "source": "Standard Procurement",
+      "label": "Standard",
+      "pity": "standard",
+      "fifty_fifty": false,
+      "match": ["standard"]
+    }
+  ]
+}

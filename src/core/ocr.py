@@ -301,10 +301,13 @@ class OCRProcessor:
         """Clean and convert number"""
         cleaned = re.sub(r"[^\d]", "", text)
 
-        # Fix spurious leading '1' from flame icon
-        if is_single_score and cleaned and len(cleaned) == 5 and cleaned[0] == "1":
+        # Flame icon next to Single High can OCR as an extra leading 1.
+        # Old scores were 4 digits, so 5-digit "1xxxx" got stripped. Scores are
+        # now 5 digits (e.g. 11971); stripping that would turn 11971 into 1971.
+        # Only treat a leading 1 as the icon when we got 6 digits.
+        if is_single_score and cleaned and len(cleaned) == 6 and cleaned[0] == "1":
             potential_fix = cleaned[1:]
-            if 1000 <= int(potential_fix) <= 9999:
+            if 10000 <= int(potential_fix) <= 99999:
                 cleaned = potential_fix
 
         try:

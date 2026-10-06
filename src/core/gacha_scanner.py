@@ -35,11 +35,21 @@ _QTY_SUFFIX_PATTERNS = (
     re.compile(r"[\s]*[*+]\s*$"),
 )
 
+# Populated from assets/gacha/banners.json (includes Reunion Procurement).
+def _known_sources() -> tuple:
+    from src.core.gacha_catalog import known_sources
+
+    return known_sources()
+
+
+# Back-compat for imports that expect a tuple constant
 KNOWN_SOURCES = (
     "Targeted Procurement",
     "Military Upgrade",
     "Custom Procurement - Dolls",
     "Custom Procurement - Weapons",
+    "Reunion Procurement - Doll",
+    "Reunion Procurement - Weapon",
     "Standard Procurement",
 )
 
@@ -169,18 +179,26 @@ def clean_source(text: str) -> str:
     t = t.rstrip("-.,;:| ")
     key = _source_key(t)
 
-    for known in KNOWN_SOURCES:
+    sources = _known_sources() or KNOWN_SOURCES
+    for known in sources:
         known_key = _source_key(known)
         if key == known_key or key.startswith(known_key):
             return known
 
+    # Reunion BEFORE Custom - both contain "procur"; Reunion must not collapse
+    # into Custom Procurement.
+    if "reunion" in key:
+        if "weapon" in key:
+            return "Reunion Procurement - Weapon"
+        if "doll" in key:
+            return "Reunion Procurement - Doll"
+
     # Fuzzy Custom Procurement - OCR often mangles "Custom"/"Procurement"
     # e.g. Custm / Custon / Procurenent, with spaces, hyphens, or underscores.
-    if "weapon" in key:
-        if key.startswith("cust") or "procur" in key:
+    if "reunion" not in key:
+        if "weapon" in key and (key.startswith("cust") or "procur" in key):
             return "Custom Procurement - Weapons"
-    if "doll" in key:
-        if key.startswith("cust") or "procur" in key:
+        if "doll" in key and (key.startswith("cust") or "procur" in key):
             return "Custom Procurement - Dolls"
 
     # Soft prefixes for other banners

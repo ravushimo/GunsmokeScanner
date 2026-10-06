@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.constants import THEME
+from src.core.gacha_catalog import banner_filter_order, pity_summary_keys
 from src.core.gacha_stats import (
     BANNER_LABELS,
     ELITE_HARD_PITY,
@@ -37,26 +38,24 @@ from src.ui.styles import (
     toolbar_frame,
 )
 
-BANNER_FILTER_ORDER = (
-    ("All", None),
-    ("Premium Doll", "Targeted Procurement"),
-    ("Premium Weapon", "Military Upgrade"),
-    ("Custom Dolls", "Custom Procurement - Dolls"),
-    ("Custom Weapons", "Custom Procurement - Weapons"),
-    ("Standard", "Standard Procurement"),
-)
+BANNER_FILTER_ORDER = tuple(banner_filter_order())
+_PITY_ORDER = tuple(pity_summary_keys())
 
-# Banner identity - GFL2 class colors (+ physical for Standard)
+# Banner identity - GFL2 class / element colors
 _BANNER_ACCENT = {
     "Premium Doll": THEME["class_vanguard"],
     "Premium Weapon": THEME["class_sentinel"],
     "Custom Dolls": THEME["class_support"],
     "Custom Weapons": THEME["class_bulwark"],
+    "Reunion Doll": THEME["element_corrosion"],
+    "Reunion Weapon": THEME["element_hydro"],
     "Standard": THEME["element_physical"],
     "Targeted Procurement": THEME["class_vanguard"],
     "Military Upgrade": THEME["class_sentinel"],
     "Custom Procurement - Dolls": THEME["class_support"],
     "Custom Procurement - Weapons": THEME["class_bulwark"],
+    "Reunion Procurement - Doll": THEME["element_corrosion"],
+    "Reunion Procurement - Weapon": THEME["element_hydro"],
     "Standard Procurement": THEME["element_physical"],
 }
 
@@ -66,14 +65,6 @@ _OUTCOME_STYLE = {
     "loss": ("L", "#F5E8E6", THEME["element_omni"]),
     "guaranteed": ("G", "#1a1a1a", THEME["element_electric"]),
 }
-
-_PITY_ORDER = (
-    ("Premium Doll", "pity_doll", "Targeted Procurement"),
-    ("Premium Weapon", "pity_weapon", "Military Upgrade"),
-    ("Custom Dolls", "pity_custom_doll", "Custom Procurement - Dolls"),
-    ("Custom Weapons", "pity_custom_weapon", "Custom Procurement - Weapons"),
-    ("Standard", "pity_standard", "Standard Procurement"),
-)
 
 # (key, header label, width, alignment)
 _TABLE_COLUMNS = (

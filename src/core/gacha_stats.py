@@ -5,6 +5,13 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.core.gacha_catalog import (
+    banner_labels,
+    doll_pity_sources,
+    fifty_fifty_sources,
+    standard_source,
+    weapon_pity_sources,
+)
 from src.core.gacha_pool import is_standard_elite_doll, is_standard_elite_weapon
 from src.core.gacha_scanner import clean_source
 
@@ -16,31 +23,14 @@ MAX_COPIES = 7
 WORST_PULLS_PER_COPY = ELITE_HARD_PITY * 2
 WORST_PULLS_V6 = WORST_PULLS_PER_COPY * MAX_COPIES  # 1120
 
-BANNER_LABELS = {
-    "Targeted Procurement": "Premium Doll",
-    "Military Upgrade": "Premium Weapon",
-    "Custom Procurement - Dolls": "Custom Dolls",
-    "Custom Procurement - Weapons": "Custom Weapons",
-    "Standard Procurement": "Standard",
-}
-
-DOLL_PITY_SOURCES = {
-    "Targeted Procurement",
-    "Custom Procurement - Dolls",
-}
-WEAPON_PITY_SOURCES = {
-    "Military Upgrade",
-    "Custom Procurement - Weapons",
-}
-STANDARD_SOURCE = "Standard Procurement"
-
+# Loaded from assets/gacha/banners.json (includes Reunion Procurement).
+BANNER_LABELS = banner_labels()
+DOLL_PITY_SOURCES = set(doll_pity_sources())
+WEAPON_PITY_SOURCES = set(weapon_pity_sources())
+STANDARD_SOURCE = standard_source()
 # Premium banners that run a featured vs standard 50/50.
-# Standard Procurement is pity-only: any Elite resets pity, but there is no
-# trackable win/loss (preferred unit is player-chosen in-game and not in OCR).
-FIFTY_FIFTY_SOURCES = {
-    "Targeted Procurement",
-    "Military Upgrade",
-}
+# Custom / Reunion / Standard are pity-only (no trackable win/loss in OCR).
+FIFTY_FIFTY_SOURCES = set(fifty_fifty_sources())
 
 
 def normalize_rarity(value: Optional[str]) -> str:
@@ -240,6 +230,8 @@ def compute_summary(annotated: List[Dict[str, Any]]) -> Dict[str, Any]:
         "pity_weapon": pity_now.get("Military Upgrade", 0),
         "pity_custom_doll": pity_now.get("Custom Procurement - Dolls", 0),
         "pity_custom_weapon": pity_now.get("Custom Procurement - Weapons", 0),
+        "pity_reunion_doll": pity_now.get("Reunion Procurement - Doll", 0),
+        "pity_reunion_weapon": pity_now.get("Reunion Procurement - Weapon", 0),
         "pity_standard": pity_now.get(STANDARD_SOURCE, 0),
         "hard_pity": ELITE_HARD_PITY,
         "avg_elite_doll_gap": avg_doll_gap,
