@@ -25,7 +25,6 @@ _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 _TIME_FULL_RE = re.compile(r"(\d{2}):(\d{2}):(\d{2})")
 _TIME_MISS_SEC_RE = re.compile(r"(\d{2}):(\d{2})(\d{2})")
 _TIME_MISS_MIN_RE = re.compile(r"(\d{2})(\d{2}):(\d{2})")
-_TIME_DIGITS_RE = re.compile(r"(\d{2})(\d{2})(\d{2})")
 PAGE_RE = re.compile(r"\d+")
 
 # OCR often mangles the trailing "×1" quantity into x1 / *1 / xt / x7 / etc.
@@ -119,6 +118,10 @@ def timestamp_is_strict(text: str) -> bool:
 
 
 def clean_timestamp(text: str) -> str:
+    """Normalize OCR clock text to YYYY-MM-DD HH:MM:SS.
+
+    OCR often drops a colon: 2220:00, 06:0906, 09:1646, or 222000.
+    """
     if not text:
         return ""
     cleaned = text.replace("/", "-").replace(".", "-")
@@ -133,11 +136,16 @@ def clean_timestamp(text: str) -> str:
         return ""
     date = dm.group(1)
     rest = loose[dm.end() :]
-    for pat in (_TIME_FULL_RE, _TIME_MISS_SEC_RE, _TIME_MISS_MIN_RE, _TIME_DIGITS_RE):
+    for pat in (_TIME_FULL_RE, _TIME_MISS_SEC_RE, _TIME_MISS_MIN_RE):
         tm = pat.search(rest)
         if not tm:
             continue
         clock = _format_hms(*tm.groups())
+        if clock:
+            return f"{date} {clock}"
+    digits = re.sub(r"\D", "", rest)
+    if len(digits) >= 6:
+        clock = _format_hms(digits[0:2], digits[2:4], digits[4:6])
         if clock:
             return f"{date} {clock}"
     return ""
@@ -346,14 +354,17 @@ class GachaScanner:
         return final == 1 or final is None
 
     def _ocr_purchase_time(self, bbox, cfg: dict) -> Tuple[str, str, Optional[np.ndarray]]:
-        """OCR a purchase_time cell. Retry up to 3 times if a clock colon is missing."""
+        """OCR a purchase_time cell. Retry only when the clock cannot be parsed."""
         _, settle = self._delays()
         img = safe_grab(bbox)
         raw = self.ocr.extract_text(
             img, config=cfg, allowlist="0123456789-: "
         )
-        if timestamp_is_strict(raw):
-            return raw, clean_timestamp(raw), img
+        parsed = clean_timestamp(raw)
+        if parsed:
+            if not timestamp_is_strict(raw):
+                self._dbg(f"  time repaired {raw!r} -> {parsed!r}")
+            return raw, parsed, img
 
         for attempt in range(1, 4):
             self._dbg(f"  time retry {attempt}/3 raw={raw!r}")
@@ -362,13 +373,15 @@ class GachaScanner:
             raw = self.ocr.extract_text(
                 img, config=cfg, allowlist="0123456789-: "
             )
-            if timestamp_is_strict(raw):
-                self._dbg(f"  time retry {attempt}/3 recovered {raw!r}")
-                return raw, clean_timestamp(raw), img
+            parsed = clean_timestamp(raw)
+            if parsed:
+                self._dbg(
+                    f"  time retry {attempt}/3 recovered {raw!r} -> {parsed!r}"
+                )
+                return raw, parsed, img
 
-        parsed = clean_timestamp(raw)
-        self._dbg(f"  time retry exhausted raw={raw!r} parsed={parsed!r}")
-        return raw, parsed, img
+        self._dbg(f"  time retry exhausted raw={raw!r}")
+        return raw, "", img
 
     def scan_current_page(
         self,
