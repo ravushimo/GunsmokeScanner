@@ -2,7 +2,7 @@
   "version": 1,
   "description": "Canonical weapon names for OCR validation (type-aware). `standard_elite` is the permanent 50/50-loss pool (manual). `elite` / `standard` / `retired` are synced from Dandegate.",
   "source": "https://dandegate.net/weapons via https://api.dandegate.net/api/weapons",
-  "updated_at": "2026-10-06T22:48:09Z",
+  "updated_at": "2026-10-28T07:39:00Z",
   "standard": [
     ".380 Curva",
     ".408 Sniper Rifle",
@@ -53,6 +53,7 @@
     "Stechkin",
     "Sturmgewehr 28",
     "Sturmgewehr 36",
+    "Sturmgewehr 41",
     "Suomi",
     "Three-Line Rifle M1891",
     "TMP",
@@ -67,6 +68,7 @@
     "Vepr-12",
     "VSK-94",
     "W 2000",
+    "Welrod MK.II",
     "Welrod MkII"
   ],
   "elite": [
@@ -93,6 +95,7 @@
     "Dulcet Defender",
     "Eulogistic Verse",
     "Expeditionary Pigeon",
+    "Feral Fang",
     "Golden Melody",
     "Guardian Silverwing",
     "Guerno",
@@ -120,6 +123,7 @@
     "Schlitzohr",
     "Sibyl",
     "Silent Conviction",
+    "Silent Sanction",
     "Silver-Winged Pistis",
     "Skylla",
     "Skysunderer's Howl",
@@ -185,6 +189,7 @@
     "Retired Stechkin",
     "Retired Sturmgewehr 28",
     "Retired Sturmgewehr 36",
+    "Retired Sturmgewehr 41",
     "Retired Suomi",
     "Retired Three-Line Rifle M1891",
     "Retired TMP",
@@ -199,6 +204,7 @@
     "Retired Vepr-12",
     "Retired VSK-94",
     "Retired W 2000",
+    "Retired Welrod MK.II",
     "Retired Welrod MkII"
   ],
   "standard_elite": [
